@@ -51,8 +51,8 @@ qtcreator-*
 CATKIN_IGNORE
 
 # VSCode
-.vscode
-*/.vscode
+.vscode/
+*/.vscode/
 
 # build
 */build/
