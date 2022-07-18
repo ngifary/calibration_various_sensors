@@ -498,7 +498,8 @@ int main(int argc, char **argv)
       ExSync;
   message_filters::Synchronizer<ExSync> sync_(ExSync(10), camera_cloud_sub_,
                                               cam_plane_coeffs_sub_);
-  sync_.registerCallback(boost::bind(&callback, _1, _2));
+  // sync_.registerCallback(boost::bind(&callback, _1, _2));
+  sync_.registerCallback(std::bind(&callback, std::placeholders::_1, std::placeholders::_2));
 
   string csv_name;
 

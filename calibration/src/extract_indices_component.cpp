@@ -11,32 +11,28 @@
 
 using namespace std::chrono_literals;
 
-
 namespace composition
 {
     // Create a ExtractIndices "component" that subclasses the generic rclcpp::Node base class.
     // Components get built into shared libraries and as such do not write their own main functions.
     // The process using the component's shared library will instantiate the class as a ROS node.
     ExtractIndices::ExtractIndices(const rclcpp::NodeOptions &options)
-        : Node("extract_indices", options), count_(0)
+        : Node("extract_indices", options)
     {
-        // Create a publisher of "std_mgs/String" messages on the "chatter" topic.
-        pub_ = create_publisher<std_msgs::msg::String>("chatter", 10);
+        // Create a callback function for when messages are received.
+        // Variations of this function also exist using, for example, UniquePtr for zero-copy transport.
+        auto callback =
+            [this](const typename std_msgs::msg::String::SharedPtr msg) -> void
+        {
+            RCLCPP_INFO(this->get_logger(), "I heard: [%s]", msg->data.c_str());
+            std::flush(std::cout);
+        };
 
-        // Use a timer to schedule periodic message publishing.
-        timer_ = create_wall_timer(1s, std::bind(&ExtractIndices::on_timer, this));
-    }
-
-    void ExtractIndices::on_timer()
-    {
-        auto msg = std::make_unique<std_msgs::msg::String>();
-        msg->data = "Hello World: " + std::to_string(++count_);
-        RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", msg->data.c_str());
-        std::flush(std::cout);
-
-        // Put the message into a queue to be processed by the middleware.
-        // This call is non-blocking.
-        pub_->publish(std::move(msg));
+        // Create a subscription to the "chatter" topic which can be matched with one or more
+        // compatible ROS publishers.
+        // Note that not all publishers on the same topic with the same type will be compatible:
+        // they must have compatible Quality of Service policies.
+        sub_ = create_subscription<std_msgs::msg::String>("chatter", 10, callback);
     }
 
 } // namespace composition

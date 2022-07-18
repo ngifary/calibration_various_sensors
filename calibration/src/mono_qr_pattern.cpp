@@ -652,7 +652,8 @@ int main(int argc, char **argv)
 
   message_filters::TimeSynchronizer<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>
       sync(image_sub, cinfo_sub, 10);
-  sync.registerCallback(boost::bind(&imageCallback, _1, _2));
+  // sync.registerCallback(boost::bind(&imageCallback, _1, _2));
+  sync.registerCallback(std::bind(&imageCallback, std::placeholders::_1, std::placeholders::_2));
 
   // ROS param callback
   auto ret = nh.get()->add_on_set_parameters_callback(param_callback);

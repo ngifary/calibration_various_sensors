@@ -6,7 +6,8 @@ from ament_index_python import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
@@ -21,15 +22,24 @@ def generate_launch_description():
         "sensor_id", default_value='0'
     )
 
-    # pcl_manager_component = ExecuteProcess(
-    #     cmd=[[
-    #         'ros2 component load ',
-    #         turtlesim_ns,
-    #         '/sim background_r ',
-    #         '120'
-    #     ]],
-    #     shell=True
-    # )
+    """Generate launch description with multiple components."""
+    container = ComposableNodeContainer(
+            name='my_container',
+            namespace='',
+            package='rclcpp_components',
+            executable='component_container',
+            composable_node_descriptions=[
+                ComposableNode(
+                    package='calibration',
+                    plugin='composition::PassThrough',
+                    name='passthrough'),
+                # ComposableNode(
+                #     package='calibration',
+                #     plugin='composition::ExtractIndices',
+                #     name='extract_indices')
+            ],
+            output='screen',
+    )
 
     lidar_pattern_node = Node(
         package='calibration',

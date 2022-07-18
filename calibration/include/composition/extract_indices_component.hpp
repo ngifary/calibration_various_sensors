@@ -14,13 +14,8 @@ public:
   COMPOSITION_PUBLIC
   explicit ExtractIndices(const rclcpp::NodeOptions & options);
 
-protected:
-  void on_timer();
-
 private:
-  size_t count_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_;
 };
 
 }  // namespace composition
