@@ -5,8 +5,9 @@ from ament_index_python import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.conditions import LaunchConfigurationEquals, LaunchConfigurationNotEquals
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, ComposableNodeContainer
+from launch_ros.actions import Node, ComposableNodeContainer, LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
 
 
@@ -24,41 +25,80 @@ def generate_launch_description():
 
     """Generate launch description with multiple components."""
     container = ComposableNodeContainer(
-            name='my_container',
-            namespace='',
-            package='rclcpp_components',
-            executable='component_container',
-            composable_node_descriptions=[
+        name='my_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container',
+        composable_node_descriptions=[
                 ComposableNode(
-                    package='calibration',
-                    plugin='composition::PassThrough',
-                    name='passthrough'),
-                # ComposableNode(
-                #     package='calibration',
-                #     plugin='composition::ExtractIndices',
-                #     name='extract_indices')
-            ],
-            output='screen',
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['pass_through_z_sick_', sensor_id],
+                    remappings=[
+                        ('input', [cloud_topic]),
+                        ('output', ['/lidar_pattern_',
+                         sensor_id, '/z_filtered'])
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'z',
+                        'filter_limit_min': -2.0,
+                        'filter_limit_max': 1.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                    }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['pass_through_y_sick_', sensor_id],
+                    remappings=[
+                        ('input', ['/lidar_pattern_',
+                         sensor_id, '/z_filtered']),
+                        ('output', ['/lidar_pattern_',
+                         sensor_id, '/zy_filtered'])
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'y',
+                        'filter_limit_min': -100.0,
+                        'filter_limit_max': 100.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                    }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['pass_through_x_sick_', sensor_id],
+                    remappings=[
+                        ('input', ['/lidar_pattern_',
+                         sensor_id, '/zy_filtered']),
+                        ('output', ['/lidar_pattern_',
+                         sensor_id, '/zyx_filtered'])
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'x',
+                        'filter_limit_min': -2.0,
+                        'filter_limit_max': 1.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                    }]),
+        ],
+        output='screen',
     )
 
     lidar_pattern_node = Node(
         package='calibration',
         executable='lidar_pattern',
-        name=['lidar_pattern_',sensor_id],
+        name=['lidar_pattern_', sensor_id],
         remappings=[
-                ('cloud1', [cloud_topic])
+            ('cloud1', ['/lidar_pattern_', sensor_id, '/zyx_filtered'])
         ],
         parameters=[{
-                'passthrough_radius_min': '1.0',
-                'passthrough_radius_max': '6.0'
+            'passthrough_radius_min': '1.0',
+            'passthrough_radius_max': '6.0'
         }]
     )
 
-
     return LaunchDescription([
-        cloud_topic,
-        sensor_id,
         cloud_topic_launch_arg,
         sensor_id_launch_arg,
-        lidar_pattern_node
+        container,
     ])
