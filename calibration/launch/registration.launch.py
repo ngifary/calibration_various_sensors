@@ -48,12 +48,12 @@ def generate_launch_description():
 
     velo2cam_calibration_node = Node(
         package='calibration',
-        executable='velo2cam_calibration',
-        name='velo2cam_calibration',
+        executable='sick2cam_calibration',
+        name='sick2cam_calibration',
         remappings=[
-                ('~cloud1', [sensor1_type, '_pattern_',
+                ('cloud1', ['/', sensor1_type, '_pattern_',
                  sensor1_id, '/centers_cloud']),
-                ('~cloud2', [sensor2_type, '_pattern_',
+                ('cloud2', ['/', sensor2_type, '_pattern_',
                  sensor2_id, '/centers_cloud'])
         ],
         parameters=[{

@@ -42,7 +42,6 @@
 #include "tf2_ros/buffer.h"
 #include "tf2/transform_datatypes.h"
 #include "tinyxml2.h"
-#include "tinyxml.h"
 #include "velo2cam_utils.h"
 #include "opencv2/opencv.hpp"
 #include "calibration_interfaces/msg/cluster_centroids.hpp"
@@ -63,7 +62,6 @@ std::vector<pcl::PointXYZ> sensor1_vector(4), sensor2_vector(4);
 
 geometry_msgs::msg::TransformStamped tf_sensor1_sensor2;
 tf2::Stamped<tf2::Transform> tf2_sensor1_s2;
-// tf::StampedTransform tf_sensor1_sensor2;
 
 bool is_sensor1_cam, is_sensor2_cam;
 bool skip_warmup, single_pose_mode;
@@ -86,7 +84,7 @@ std::vector<std::vector<std::tuple<int, int, pcl::PointCloud<pcl::PointXYZ>,
 
 int S1_WARMUP_COUNT = 0, S2_WARMUP_COUNT = 0;
 bool S1_WARMUP_DONE = false, S2_WARMUP_DONE = false;
-int TARGET_POSITIONS_COUNT = 0;
+unsigned TARGET_POSITIONS_COUNT = 0;
 int TARGET_ITERATIONS = 30;
 
 bool sync_iterations;
@@ -104,13 +102,12 @@ void sensor1_callback(
 void sensor2_callback(
     calibration_interfaces::msg::ClusterCentroids::ConstSharedPtr sensor2_centroids);
 
-std::shared_ptr<rclcpp::Node> *nh_;
-// ros::NodeHandle *nh_;
+std::shared_ptr<rclcpp::Node> nh;
 
 rclcpp::Subscription<calibration_interfaces::msg::ClusterCentroids>::SharedPtr sensor1_sub, sensor2_sub;
 
 auto tf_buffer_ =
-    std::make_unique<tf2_ros::Buffer>(nh_->get()->get_clock());
+    std::make_unique<tf2_ros::Buffer>(nh.get()->get_clock());
 auto listener_ =
     std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -142,12 +139,12 @@ void calibrateExtrinsics(int seek_iter = -1)
   { // Add clouds (per sensor) from every position using
     // last 'seek_iter' detection
     if (DEBUG)
-      RCLCPP_INFO(nh_->get()->get_logger(), "Seeking %d iterations", seek_iter);
+      RCLCPP_INFO(nh.get()->get_logger(), "Seeking %d iterations", seek_iter);
 
-    for (int i = 0; i < TARGET_POSITIONS_COUNT + 1; ++i)
+    for (unsigned i = 0; i < TARGET_POSITIONS_COUNT + 1; ++i)
     {
       if (DEBUG)
-        RCLCPP_INFO(nh_->get()->get_logger(), "Target position: %d, Last sensor2: %d, last sensor1: %d",
+        RCLCPP_INFO(nh.get()->get_logger(), "Target position: %d, Last sensor2: %d, last sensor1: %d",
                     i + 1, std::get<0>(sensor2_buffer[i].back()),
                     std::get<0>(sensor1_buffer[i].back()));
       // Sensor 1
@@ -161,7 +158,7 @@ void calibrateExtrinsics(int seek_iter = -1)
           });
       if (it1 == sensor1_buffer[i].end())
       {
-        RCLCPP_WARN(nh_->get()->get_logger(), "Could not sync sensor1");
+        RCLCPP_WARN(nh.get()->get_logger(), "Could not sync sensor1");
         return;
       }
 
@@ -184,7 +181,7 @@ void calibrateExtrinsics(int seek_iter = -1)
           });
       if (it2 == sensor2_buffer[i].end())
       {
-        RCLCPP_WARN(nh_->get()->get_logger(), "Could not sync sensor2");
+        RCLCPP_WARN(nh.get()->get_logger(), "Could not sync sensor2");
         return;
       }
 
@@ -196,12 +193,12 @@ void calibrateExtrinsics(int seek_iter = -1)
       used_sensor2 = std::get<1>(*it2);
       total_sensor2 = std::get<0>(*it2);
     }
-    RCLCPP_INFO(nh_->get()->get_logger(), "Synchronizing cluster centroids");
+    RCLCPP_INFO(nh.get()->get_logger(), "Synchronizing cluster centroids");
   }
   else
   { // Add clouds (per sensor) from every position using last available
     // detection
-    for (int i = 0; i < TARGET_POSITIONS_COUNT + 1; ++i)
+    for (unsigned i = 0; i < TARGET_POSITIONS_COUNT + 1; ++i)
     {
       // Sensor 1
       local_sensor1_vector.insert(
@@ -242,7 +239,7 @@ void calibrateExtrinsics(int seek_iter = -1)
   pcl::PointCloud<pcl::PointXYZ>::Ptr sorted_centers2(
       new pcl::PointCloud<pcl::PointXYZ>());
 
-  for (int i = 0; i < local_sensor1_vector.size(); ++i)
+  for (unsigned i = 0; i < local_sensor1_vector.size(); ++i)
   {
     sorted_centers1->push_back(local_sensor1_vector[i]);
     sorted_centers2->push_back(local_sensor2_vector[i]);
@@ -272,18 +269,13 @@ void calibrateExtrinsics(int seek_iter = -1)
   transf.setOrigin(origin);
   transf.setRotation(tfqt);
 
-  static auto br = tf2_ros::StaticTransformBroadcaster(nh_->get());
-  rclcpp::Time now = nh_->get()->get_clock()->now();
+  static auto br = tf2_ros::StaticTransformBroadcaster(nh.get());
+  rclcpp::Time now = nh.get()->get_clock()->now();
 
   tf_sensor1_sensor2.header.stamp = now;
   tf_sensor1_sensor2.header.frame_id = sensor1_final_transformation_frame;
   tf_sensor1_sensor2.child_frame_id = sensor2_final_transformation_frame;
   tf2::convert(transf.inverse(), tf_sensor1_sensor2.transform);
-
-  // static tf2::TransformBroadcaster br;
-  // tf_sensor1_sensor2 = tf::StampedTransform(transf.inverse(), ros::Time::now(),
-  //                                           sensor1_final_transformation_frame,
-  //                                           sensor2_final_transformation_frame);
 
   if (publish_tf_)
     br.sendTransform(tf_sensor1_sensor2);
@@ -292,7 +284,6 @@ void calibrateExtrinsics(int seek_iter = -1)
   tf2::fromMsg(tf_sensor1_sensor2, tf_transform);
 
   tf2::Transform inverse = tf_transform.inverse();
-  // tf::Transform inverse = tf_sensor1_sensor2.inverse();
   double roll, pitch, yaw;
   double xt = inverse.getOrigin().getX(), yt = inverse.getOrigin().getY(),
          zt = inverse.getOrigin().getZ();
@@ -356,14 +347,10 @@ void sensor1_callback(
       { // Reset counter to allow further warmup
         S1_WARMUP_COUNT = 0;
       }
-      sensor1_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor1_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud1", 100, sensor1_callback);
-      sensor2_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor2_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud2", 100, sensor2_callback);
-      // sensor1_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud1", 100, sensor1_callback);
-      // sensor2_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud2", 100, sensor2_callback);
     }
     return;
   }
@@ -374,7 +361,7 @@ void sensor1_callback(
   }
 
   if (DEBUG)
-    RCLCPP_INFO(nh_->get()->get_logger(), "sensor1 (%s) pattern ready!", sensor1_frame_id.c_str());
+    RCLCPP_INFO(nh.get()->get_logger(), "sensor1 (%s) pattern ready!", sensor1_frame_id.c_str());
 
   if (sensor1_buffer.size() == TARGET_POSITIONS_COUNT)
   {
@@ -404,28 +391,13 @@ void sensor1_callback(
     }
     catch (tf2::TransformException &ex)
     {
-      RCLCPP_WARN(nh_->get()->get_logger(), "TF exception:\n%s", ex.what());
+      RCLCPP_WARN(nh.get()->get_logger(), "TF exception:\n%s", ex.what());
       return;
     }
-    // tf::TransformListener listener;
-    // tf::StampedTransform transform;
-    // try
-    // {
-    //   listener.waitForTransform(sensor1_rotated_frame_id, sensor1_frame_id,
-    //                             ros::Time(0), ros::Duration(20.0));
-    //   listener.lookupTransform(sensor1_rotated_frame_id, sensor1_frame_id,
-    //                            ros::Time(0), transform);
-    // }
-    // catch (tf::TransformException &ex)
-    // {
-    //   ROS_WARN("TF exception:\n%s", ex.what());
-    //   return;
-    // }
 
     tf2::Stamped<tf2::Transform> tf_transform;
     tf2::fromMsg(transform, tf_transform);
     tf2::Transform inverse = tf_transform.inverse();
-    // tf::Transform inverse = transform.inverse();
     double roll, pitch, yaw;
     inverse.getBasis().getRPY(roll, pitch, yaw);
 
@@ -459,7 +431,7 @@ void sensor1_callback(
   sensor1_count = sensor1_centroids->total_iterations;
 
   if (DEBUG)
-    RCLCPP_INFO(nh_->get()->get_logger(), "[V2C] sensor1");
+    RCLCPP_INFO(nh.get()->get_logger(), "[V2C] sensor1");
 
   for (vector<pcl::PointXYZ>::iterator it = sensor1_vector.begin();
        it < sensor1_vector.end(); ++it)
@@ -482,10 +454,8 @@ void sensor1_callback(
       if (tf_sensor1_sensor2.header.frame_id != "" &&
           tf_sensor1_sensor2.child_frame_id != "")
       {
-        static auto br = tf2_ros::StaticTransformBroadcaster(nh_->get());
-        // static tf::TransformBroadcaster br;
-        tf_sensor1_sensor2.header.stamp = nh_->get()->get_clock()->now();
-        // tf_sensor1_sensor2.stamp_ = ros::Time::now();
+        static auto br = tf2_ros::StaticTransformBroadcaster(nh.get());
+        tf_sensor1_sensor2.header.stamp = nh.get()->get_clock()->now();
         if (publish_tf_)
           br.sendTransform(tf_sensor1_sensor2);
       }
@@ -546,14 +516,10 @@ void sensor1_callback(
         sensor1_count = 0;
         sensor2_count = 0;
       }
-      sensor1_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor1_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud1", 100, sensor1_callback);
-      sensor2_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor2_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud2", 100, sensor2_callback);
-      // sensor1_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud1", 100, sensor1_callback);
-      // sensor2_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud2", 100, sensor2_callback);
       return;
     }
   }
@@ -562,10 +528,8 @@ void sensor1_callback(
     if (tf_sensor1_sensor2.header.frame_id != "" &&
         tf_sensor1_sensor2.child_frame_id != "")
     {
-      static auto br = tf2_ros::StaticTransformBroadcaster(nh_->get());
-      // static tf::TransformBroadcaster br;
-      tf_sensor1_sensor2.header.stamp = nh_->get()->get_clock()->now();
-      // tf_sensor1_sensor2.stamp_ = ros::Time::now();
+      static auto br = tf2_ros::StaticTransformBroadcaster(nh.get());
+      tf_sensor1_sensor2.header.stamp = nh.get()->get_clock()->now();
       if (publish_tf_)
         br.sendTransform(tf_sensor1_sensor2);
     }
@@ -630,14 +594,10 @@ void sensor2_callback(
       { // Reset counter to allow further warmup
         S2_WARMUP_COUNT = 0;
       }
-      sensor1_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor1_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud1", 100, sensor1_callback);
-      sensor2_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor2_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud2", 100, sensor2_callback);
-      // sensor1_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud1", 100, sensor1_callback);
-      // sensor2_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud2", 100, sensor2_callback);
     }
     return;
   }
@@ -646,7 +606,7 @@ void sensor2_callback(
     return;
   }
   if (DEBUG)
-    RCLCPP_INFO(nh_->get()->get_logger(), "sensor2 (%s) pattern ready!", sensor2_frame_id.c_str());
+    RCLCPP_INFO(nh.get()->get_logger(), "sensor2 (%s) pattern ready!", sensor2_frame_id.c_str());
 
   if (sensor2_buffer.size() == TARGET_POSITIONS_COUNT)
   {
@@ -676,29 +636,13 @@ void sensor2_callback(
     }
     catch (tf2::TransformException &ex)
     {
-      RCLCPP_WARN(nh_->get()->get_logger(), "TF exception:\n%s", ex.what());
+      RCLCPP_WARN(nh.get()->get_logger(), "TF exception:\n%s", ex.what());
       return;
     }
-
-    // tf::TransformListener listener;
-    // tf::StampedTransform transform;
-    // try
-    // {
-    //   listener.waitForTransform(sensor2_rotated_frame_id, sensor2_frame_id,
-    //                             ros::Time(0), ros::Duration(20.0));
-    //   listener.lookupTransform(sensor2_rotated_frame_id, sensor2_frame_id,
-    //                            ros::Time(0), transform);
-    // }
-    // catch (tf::TransformException &ex)
-    // {
-    //   ROS_WARN("TF exception:\n%s", ex.what());
-    //   return;
-    // }
 
     tf2::Stamped<tf2::Transform> tf_transform;
     tf2::fromMsg(transform, tf_transform);
     tf2::Transform inverse = tf_transform.inverse();
-    // tf::Transform inverse = transform.inverse();
     double roll, pitch, yaw;
     inverse.getBasis().getRPY(roll, pitch, yaw);
 
@@ -733,7 +677,7 @@ void sensor2_callback(
   sensor2_count = sensor2_centroids->total_iterations;
 
   if (DEBUG)
-    RCLCPP_INFO(nh_->get()->get_logger(), "[V2C] sensor2");
+    RCLCPP_INFO(nh.get()->get_logger(), "[V2C] sensor2");
 
   for (vector<pcl::PointXYZ>::iterator it = sensor2_vector.begin();
        it < sensor2_vector.end(); ++it)
@@ -756,10 +700,8 @@ void sensor2_callback(
       if (tf_sensor1_sensor2.header.frame_id != "" &&
           tf_sensor1_sensor2.child_frame_id != "")
       {
-        static auto br = tf2_ros::StaticTransformBroadcaster(nh_->get());
-        // static tf::TransformBroadcaster br;
-        tf_sensor1_sensor2.header.stamp = nh_->get()->get_clock()->now();
-        // tf_sensor1_sensor2.stamp_ = ros::Time::now();
+        static auto br = tf2_ros::StaticTransformBroadcaster(nh.get());
+        tf_sensor1_sensor2.header.stamp = nh.get()->get_clock()->now();
         if (publish_tf_)
           br.sendTransform(tf_sensor1_sensor2);
       }
@@ -820,14 +762,10 @@ void sensor2_callback(
         sensor1_count = 0;
         sensor2_count = 0;
       }
-      sensor1_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor1_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud1", 100, sensor1_callback);
-      sensor2_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+      sensor2_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
           "cloud2", 100, sensor2_callback);
-      // sensor1_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud1", 100, sensor1_callback);
-      // sensor2_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-      //     "cloud2", 100, sensor2_callback);
       return;
     }
   }
@@ -836,10 +774,8 @@ void sensor2_callback(
     if (tf_sensor1_sensor2.header.frame_id != "" &&
         tf_sensor1_sensor2.child_frame_id != "")
     {
-      static auto br = tf2_ros::StaticTransformBroadcaster(nh_->get());
-      // static tf::TransformBroadcaster br;
-      tf_sensor1_sensor2.header.stamp = nh_->get()->get_clock()->now();
-      // tf_sensor1_sensor2.stamp_ = ros::Time::now();
+      static auto br = tf2_ros::StaticTransformBroadcaster(nh.get());
+      tf_sensor1_sensor2.header.stamp = nh.get()->get_clock()->now();
       if (publish_tf_)
         br.sendTransform(tf_sensor1_sensor2);
     }
@@ -849,23 +785,22 @@ void sensor2_callback(
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  *nh_ = std::make_shared<rclcpp::Node>("velo2cam_calibration");
+  nh = std::make_shared<rclcpp::Node>("velo2cam_calibration");
 
-  // ros::init(argc, argv, "velo2cam_calibration");
-  // ros::NodeHandle nh;             // GLOBAL
-  // nh_ = new ros::NodeHandle("~"); // LOCAL
+  RCLCPP_WARN(nh.get()->get_logger(), "Starting....");
+  std::cout << "Starting...." << endl;
 
   string csv_name;
 
-  sync_iterations = nh_->get()->declare_parameter("sync_iterations", false);
-  save_to_file_ = nh_->get()->declare_parameter("save_to_file", false);
-  publish_tf_ = nh_->get()->declare_parameter("publish_tf", true);
-  is_sensor2_cam = nh_->get()->declare_parameter("is_sensor2_cam", false);
-  is_sensor1_cam = nh_->get()->declare_parameter("is_sensor1_cam", false);
-  skip_warmup = nh_->get()->declare_parameter("skip_warmup", false);
-  single_pose_mode = nh_->get()->declare_parameter("single_pose_mode", false);
-  results_every_pose = nh_->get()->declare_parameter("results_every_pose", false);
-  csv_name = nh_->get()->declare_parameter("csv_name", "registration_" + currentDateTime() + ".csv");
+  sync_iterations = nh.get()->declare_parameter("sync_iterations", false);
+  save_to_file_ = nh.get()->declare_parameter("save_to_file", false);
+  publish_tf_ = nh.get()->declare_parameter("publish_tf", true);
+  is_sensor2_cam = nh.get()->declare_parameter("is_sensor2_cam", false);
+  is_sensor1_cam = nh.get()->declare_parameter("is_sensor1_cam", false);
+  skip_warmup = nh.get()->declare_parameter("skip_warmup", false);
+  single_pose_mode = nh.get()->declare_parameter("single_pose_mode", false);
+  results_every_pose = nh.get()->declare_parameter("results_every_pose", false);
+  csv_name = nh.get()->declare_parameter("csv_name", "registration_" + currentDateTime() + ".csv");
 
   sensor1Received = false;
   sensor1_cloud =
@@ -878,27 +813,21 @@ int main(int argc, char **argv)
   isensor2_cloud =
       pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
-  sensor1_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+  sensor1_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
       "cloud1", 100, sensor1_callback);
-  sensor2_sub = nh_->get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
+  sensor2_sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
       "cloud2", 100, sensor2_callback);
-  // sensor1_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-  //     "cloud1", 100, sensor1_callback);
-  // sensor2_sub = nh_->subscribe<velo2cam_calibration::ClusterCentroids>(
-  //     "cloud2", 100, sensor2_callback);
 
   if (DEBUG)
   {
-    clusters_sensor2_pub = nh_->get()->create_publisher<sensor_msgs::msg::PointCloud2>("clusters_sensor2", 1);
-    clusters_sensor1_pub = nh_->get()->create_publisher<sensor_msgs::msg::PointCloud2>("clusters_sensor1", 1);
-    colour_sensor2_pub = nh_->get()->create_publisher<sensor_msgs::msg::PointCloud2>("colour_sensor2", 1);
-    colour_sensor1_pub = nh_->get()->create_publisher<sensor_msgs::msg::PointCloud2>("colour_sensor1", 1);
+    clusters_sensor2_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("clusters_sensor2", 1);
+    clusters_sensor1_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("clusters_sensor1", 1);
+    colour_sensor2_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("colour_sensor2", 1);
+    colour_sensor1_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("colour_sensor1", 1);
   }
 
-  sensor_switch_pub = nh_->get()->create_publisher<std_msgs::msg::Empty>("warmup_switch", 1);
-  iterations_pub = nh_->get()->create_publisher<std_msgs::msg::Int32>("iterations", 1);
-  // sensor_switch_pub = nh.advertise<std_msgs::Empty>("warmup_switch", 1);
-  // iterations_pub = nh_->advertise<std_msgs::Int32>("iterations", 1);
+  sensor_switch_pub = nh.get()->create_publisher<std_msgs::msg::Empty>("warmup_switch", 1);
+  iterations_pub = nh.get()->create_publisher<std_msgs::msg::Int32>("iterations", 1);
 
   calibration_ended = false;
 
@@ -909,7 +838,7 @@ int main(int argc, char **argv)
     if (save_to_file_)
     {
       if (DEBUG)
-        RCLCPP_INFO(nh_->get()->get_logger(), "Opening %s", os.str().c_str());
+        RCLCPP_INFO(nh.get()->get_logger(), "Opening %s", os.str().c_str());
       savefile.open(os.str().c_str());
       savefile << "it, x, y, z, r, p, y, used_sen1, used_sen2, total_sen1, "
                   "total_sen2"
@@ -921,7 +850,7 @@ int main(int argc, char **argv)
   {
     S1_WARMUP_DONE = true;
     S2_WARMUP_DONE = true;
-    RCLCPP_WARN(nh_->get()->get_logger(), "Skipping warmup");
+    RCLCPP_WARN(nh.get()->get_logger(), "Skipping warmup");
   }
   else
   {
@@ -933,14 +862,9 @@ int main(int argc, char **argv)
   rclcpp::Rate loop_rate(30);
   while (rclcpp::ok() && !calibration_ended)
   {
-    rclcpp::spin(*nh_);
+    rclcpp::spin(nh);
     loop_rate.sleep();
   }
-  // ros::Rate loop_rate(30);
-  // while (ros::ok() && !calibration_ended)
-  // {
-  //   ros::spinOnce();
-  // }
 
   sensor1_sub.reset();
   sensor2_sub.reset();
@@ -966,7 +890,6 @@ int main(int argc, char **argv)
   tf2::Stamped<tf2::Transform> tf_transform;
   tf2::fromMsg(transform, tf_transform);
   tf2::Transform inverse = tf_transform.inverse();
-  // tf2::Transform inverse = tf_sensor1_sensor2.inverse();
   double roll, pitch, yaw;
   double xt = inverse.getOrigin().getX(), yt = inverse.getOrigin().getY(),
          zt = inverse.getOrigin().getZ();
@@ -988,22 +911,11 @@ int main(int argc, char **argv)
   doc.LinkEndChild(decl);
   tinyxml2::XMLElement *root = doc.NewElement("launch");
   doc.LinkEndChild(root);
-  // tinyxml2::XMLDeclaration *decl = new tinyxml2::XMLDeclaration("1.0", "utf-8", "");
-  // TiXmlDocument doc;
-  // TiXmlDeclaration *decl = new TiXmlDeclaration("1.0", "utf-8", "");
-  // doc.LinkEndChild(decl);
-  // TiXmlElement *root = new TiXmlElement("launch");
-  // doc.LinkEndChild(root);
 
-  // tinyxml2::XMLElement *arg = root->InsertEndChild("arg");
   tinyxml2::XMLElement *arg = doc.NewElement("arg");
   arg->SetAttribute("name", "stdout");
   arg->SetAttribute("default", "screen");
   root->LinkEndChild(arg);
-  // TiXmlElement *arg = new TiXmlElement("arg");
-  // arg->SetAttribute("name", "stdout");
-  // arg->SetAttribute("default", "screen");
-  // root->LinkEndChild(arg);
 
   string sensor2_final_transformation_frame = sensor2_frame_id;
   if (is_sensor2_cam)
@@ -1016,7 +928,6 @@ int main(int argc, char **argv)
     string sensor2_rotation = sensor2_rot_stream_pub.str();
 
     tinyxml2::XMLElement *sensor2_rotation_node = doc.NewElement("node");
-    // TiXmlElement *sensor2_rotation_node = new TiXmlElement("node");
     sensor2_rotation_node->SetAttribute("pkg", "tf");
     sensor2_rotation_node->SetAttribute("type", "static_transform_publisher");
     sensor2_rotation_node->SetAttribute("name", "sensor2_rot_tf");
@@ -1035,7 +946,6 @@ int main(int argc, char **argv)
     string sensor1_rotation = sensor1_rot_stream_pub.str();
 
     tinyxml2::XMLElement *sensor1_rotation_node = doc.NewElement("node");
-    // TiXmlElement *sensor1_rotation_node = new TiXmlElement("node");
     sensor1_rotation_node->SetAttribute("pkg", "tf");
     sensor1_rotation_node->SetAttribute("type", "static_transform_publisher");
     sensor1_rotation_node->SetAttribute("name", "sensor1_rot_tf");
@@ -1050,7 +960,6 @@ int main(int argc, char **argv)
   string tf_args = sstream.str();
 
   tinyxml2::XMLElement *node = doc.NewElement("node");
-  // TiXmlElement *node = new TiXmlElement("node");
   node->SetAttribute("pkg", "tf");
   node->SetAttribute("type", "static_transform_publisher");
   node->SetAttribute("name", "velo2cam_tf");

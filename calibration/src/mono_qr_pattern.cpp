@@ -25,25 +25,17 @@
 */
 
 #include "cv_bridge/cv_bridge.h"
-// #include "dynamic_reconfigure/server.h"
 #include "image_geometry/pinhole_camera_model.h"
 #include "message_filters/subscriber.h"
 #include "message_filters/time_synchronizer.h"
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
 #include "pcl_conversions/pcl_conversions.h"
-// #include <ros/ros.h>
-// #include <sensor_msgs/CameraInfo.h>
-// #include <sensor_msgs/Image.h>
-// #include <sensor_msgs/PointCloud2.h>
-// #include <std_msgs/Empty.h>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "std_msgs/msg/empty.hpp"
-// #include <velo2cam_calibration/ClusterCentroids.h>
-// #include <velo2cam_calibration/MonocularConfig.h>
 #include "calibration_interfaces/msg/cluster_centroids.hpp"
 #include "velo2cam_utils.h"
 
@@ -53,29 +45,139 @@
 using namespace std;
 using namespace cv;
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
-cv::Ptr<cv::aruco::Dictionary> dictionary;
-rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub, centers_cloud_pub, cumulative_pub;
-rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub;
+namespace sync_policies = message_filters::sync_policies;
 
-// ROS params
-double marker_size_, delta_width_qr_center_, delta_height_qr_center_;
-double delta_width_circles_, delta_height_circles_;
-int min_detected_markers_;
-int frames_proc_ = 0, frames_used_ = 0;
-double cluster_tolerance_;
-double min_cluster_factor_;
+class MonoQRPattern : public rclcpp::Node
+{
+public:
+  MonoQRPattern();
+  ~MonoQRPattern();
 
-bool WARMUP_DONE = false;
+private:
+  /* data */
+  Point2f projectPointDist(Point3f pt_cv, const Mat intrinsics, const Mat distCoeffs);
+  Eigen::Vector3f mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud);
+  Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, Eigen::Vector3f means);
+  void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg, const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info);
+  rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
+  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
 
-bool skip_warmup_;
-bool save_to_file_;
-std::ofstream savefile;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
+  cv::Ptr<cv::aruco::Dictionary> dictionary;
 
-std::shared_ptr<rclcpp::Node> nh;
+  // Pubs Definition
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub, centers_cloud_pub, cumulative_pub;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub;
 
-Point2f projectPointDist(Point3f pt_cv, const Mat intrinsics,
-                         const Mat distCoeffs)
+  // Subs Definition
+  message_filters::Subscriber<sensor_msgs::msg::Image> image_sub;
+  message_filters::Subscriber<sensor_msgs::msg::CameraInfo> cinfo_sub;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
+
+  /** \brief Synchronized image and camera info.*/
+  std::shared_ptr<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>>> sync_;
+  /** \brief The maximum queue size (default: 3). */
+  int max_queue_size_ = 3;
+
+  // ROS params
+  double marker_size_, delta_width_qr_center_, delta_height_qr_center_;
+  double delta_width_circles_, delta_height_circles_;
+  unsigned min_detected_markers_;
+  int frames_proc_ = 0, frames_used_ = 0;
+  double cluster_tolerance_;
+  double min_cluster_factor_;
+
+  bool WARMUP_DONE = false;
+
+  bool skip_warmup_;
+  bool save_to_file_;
+  std::ofstream savefile;
+};
+
+MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
+{
+  RCLCPP_INFO(this->get_logger(), "[Mono] Starting....");
+  // Initialize QR dictionary
+  dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+
+  cumulative_cloud =
+      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+
+  if (DEBUG)
+  {
+    qr_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
+    centers_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_pts_cloud", 1);
+    cumulative_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
+  }
+  clusters_pub = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+
+  string csv_name;
+
+  delta_width_circles_ = this->declare_parameter("delta_width_circles", 0.5);
+  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.5);
+  marker_size_ = this->declare_parameter("marker_size", 0.2);
+  delta_width_qr_center_ = this->declare_parameter("delta_width_qr_center", 0.55);
+  delta_height_qr_center_ = this->declare_parameter("delta_height_qr_center", 0.35);
+  min_detected_markers_ = this->declare_parameter("min_detected_markers", 3);
+  cluster_tolerance_ = this->declare_parameter("cluster_tolerance", 0.05);
+  min_cluster_factor_ = this->declare_parameter("min_cluster_factor", 2.0 / 3.0);
+  skip_warmup_ = this->declare_parameter("skip_warmup", false);
+  save_to_file_ = this->declare_parameter("save_to_file", false);
+  csv_name = this->declare_parameter("csv_name", "mono_pattern_" + currentDateTime() + ".csv");
+
+  string image_topic, cinfo_topic;
+  image_topic = this->declare_parameter("image_topic", "/stereo_camera/left/image_rect_color");
+  cinfo_topic = this->declare_parameter("cinfo_topic", "/stereo_camera/left/camera_info");
+
+  rclcpp::QoS qos(10);
+  auto rmw_qos_profile = qos.get_rmw_qos_profile();
+
+  image_sub.subscribe(this, image_topic, rmw_qos_profile);
+  cinfo_sub.subscribe(this, cinfo_topic, rmw_qos_profile);
+
+  sync_ = std::make_shared<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>>>(max_queue_size_);
+
+  sync_->connectInput(image_sub, cinfo_sub);
+
+  sync_->registerCallback(std::bind(&MonoQRPattern::imageCallback, this, std::placeholders::_1, std::placeholders::_2));
+
+  // ROS param callback 
+  auto ret = this->add_on_set_parameters_callback(std::bind(&MonoQRPattern::param_callback, this, std::placeholders::_1));
+
+  warmup_sub = this->create_subscription<std_msgs::msg::Empty>(
+      "warmup_switch", 100, std::bind(&MonoQRPattern::warmup_callback, this, std::placeholders::_1));
+
+  if (skip_warmup_)
+  {
+    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+    WARMUP_DONE = true;
+  }
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    ostringstream os;
+    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+      savefile.open(os.str().c_str());
+      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
+               << endl;
+    }
+  }
+}
+
+MonoQRPattern::~MonoQRPattern()
+{
+  RCLCPP_INFO(this->get_logger(), "[Mono] Terminating....");
+}
+
+Point2f MonoQRPattern::projectPointDist(Point3f pt_cv, const Mat intrinsics, const Mat distCoeffs)
 {
   // Project a 3D point taking into account distortion
   vector<Point3f> input{pt_cv};
@@ -87,7 +189,7 @@ Point2f projectPointDist(Point3f pt_cv, const Mat intrinsics,
   return projectedPoints[0];
 }
 
-Eigen::Vector3f mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud)
+Eigen::Vector3f MonoQRPattern::mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud)
 {
   double x = 0, y = 0, z = 0;
   int npoints = cumulative_cloud->points.size();
@@ -102,8 +204,8 @@ Eigen::Vector3f mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud)
   return Eigen::Vector3f(x, y, z);
 }
 
-Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud,
-                           Eigen::Vector3f means)
+Eigen::Matrix3f
+MonoQRPattern::covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, Eigen::Vector3f means)
 {
   double x = 0, y = 0, z = 0;
   int npoints = cumulative_cloud->points.size();
@@ -132,10 +234,8 @@ Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud,
   return covarianceMatrix;
 }
 
-// void imageCallback(const sensor_msgs::ImageConstPtr &msg,
-//                    const sensor_msgs::CameraInfoConstPtr &left_info)
-void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg,
-                   const sensor_msgs::msg::CameraInfo::ConstSharedPtr &left_info)
+void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg,
+                                  const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info)
 {
   frames_proc_++;
 
@@ -146,13 +246,13 @@ void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg,
   }
   catch (cv_bridge::Exception &e)
   {
-    RCLCPP_ERROR(nh.get()->get_logger(), "cv_bridge exception: %s", e.what());
+    RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
     return;
   }
   Mat image = cv_img_ptr->image;
   Mat imageCopy;
   image.copyTo(imageCopy);
-  sensor_msgs::msg::CameraInfo::Ptr cinfo(new sensor_msgs::msg::CameraInfo(*left_info));
+  sensor_msgs::msg::CameraInfo::SharedPtr cinfo(new sensor_msgs::msg::CameraInfo(*left_info));
   image_geometry::PinholeCameraModel cam_model_;
 
   // TODO Not needed at each frame -> Move it to separate callback
@@ -170,7 +270,7 @@ void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg,
   cameraMatrix.at<float>(2, 2) = cinfo->k[8];
 
   Mat distCoeffs(1, cinfo->d.size(), CV_32F);
-  for (int i = 0; i < cinfo->d.size(); i++)
+  for (unsigned i = 0; i < cinfo->d.size(); i++)
     distCoeffs.at<float>(0, i) = cinfo->d[i];
   // TODO End of block to move
 
@@ -251,6 +351,8 @@ std:
   // Compute initial guess as average of individual markers poses
   if (ids.size() >= min_detected_markers_ && ids.size() <= TARGET_NUM_CIRCLES)
   {
+    RCLCPP_INFO(this->get_logger(), "%lu marker(s) of %d found!. Processing frame...", ids.size(),
+                TARGET_NUM_CIRCLES);
     // Estimate 3D position of the markers
     vector<Vec3d> rvecs, tvecs;
     Vec3f rvec_sin, rvec_cos;
@@ -258,7 +360,7 @@ std:
                                          distCoeffs, rvecs, tvecs);
 
     // Draw markers' axis and centers in color image (Debug purposes)
-    for (int i = 0; i < ids.size(); i++)
+    for (unsigned i = 0; i < ids.size(); i++)
     {
       double x = tvecs[i][0];
       double y = tvecs[i][1];
@@ -321,7 +423,7 @@ std:
     t.copyTo(board_transform.rowRange(0, 3).col(3));
 
     // Compute coordintates of circle centers
-    for (int i = 0; i < boardCircleCenters.size(); ++i)
+    for (unsigned i = 0; i < boardCircleCenters.size(); ++i)
     {
       cv::Mat mat = cv::Mat::zeros(4, 1, CV_32F);
       mat.at<float>(0, 0) = boardCircleCenters[i].x;
@@ -368,11 +470,11 @@ std:
     std::vector<std::vector<int>> groups;
     comb(candidates_cloud->size(), TARGET_NUM_CIRCLES, groups);
     double groups_scores[groups.size()]; // -1: invalid; 0-1 normalized score
-    for (int i = 0; i < groups.size(); ++i)
+    for (unsigned i = 0; i < groups.size(); ++i)
     {
       std::vector<pcl::PointXYZ> candidates;
       // Build candidates set
-      for (int j = 0; j < groups[i].size(); ++j)
+      for (unsigned j = 0; j < groups[i].size(); ++j)
       {
         pcl::PointXYZ center;
         center.x = candidates_cloud->at(groups[i][j]).x;
@@ -391,12 +493,12 @@ std:
 
     int best_candidate_idx = -1;
     double best_candidate_score = -1;
-    for (int i = 0; i < groups.size(); ++i)
+    for (unsigned i = 0; i < groups.size(); ++i)
     {
       if (best_candidate_score == 1 && groups_scores[i] == 1)
       {
         // Exit 4: Several candidates fit target's geometry
-        RCLCPP_ERROR(nh.get()->get_logger(),
+        RCLCPP_ERROR(this->get_logger(),
                      "[Mono] More than one set of candidates fit target's geometry. "
                      "Please, make sure your parameters are well set. Exiting callback");
         return;
@@ -411,27 +513,27 @@ std:
     if (best_candidate_idx == -1)
     {
       // Exit: No candidates fit target's geometry
-      RCLCPP_WARN(nh.get()->get_logger(),
+      RCLCPP_WARN(this->get_logger(),
                   "[Mono] Unable to find a candidate set that matches target's "
                   "geometry");
       return;
     }
 
-    for (int j = 0; j < groups[best_candidate_idx].size(); ++j)
+    for (unsigned j = 0; j < groups[best_candidate_idx].size(); ++j)
     {
       centers_cloud->push_back(
           candidates_cloud->at(groups[best_candidate_idx][j]));
     }
 
     // Add centers to cumulative for further clustering
-    for (int i = 0; i < centers_cloud->size(); i++)
+    for (unsigned i = 0; i < centers_cloud->size(); i++)
     {
       cumulative_cloud->push_back(centers_cloud->at(i));
     }
     frames_used_++;
     if (DEBUG)
     {
-      RCLCPP_INFO(nh.get()->get_logger(), "[Mono] %d/%d frames: %ld pts in cloud", frames_used_,
+      RCLCPP_INFO(this->get_logger(), "[Mono] %d/%d frames: %ld pts in cloud", frames_used_,
                   frames_proc_, cumulative_cloud->points.size());
     }
 
@@ -448,7 +550,7 @@ std:
 
     if (DEBUG)
     { // Draw centers
-      for (int i = 0; i < centers_cloud->size(); i++)
+      for (unsigned i = 0; i < centers_cloud->size(); i++)
       {
         cv::Point3f pt_circle1(centers_cloud->at(i).x, centers_cloud->at(i).y,
                                centers_cloud->at(i).z);
@@ -530,7 +632,7 @@ std:
   }
   else
   { // Markers found != TARGET_NUM_CIRCLES
-    RCLCPP_WARN(nh.get()->get_logger(), "%lu marker(s) found, %d expected. Skipping frame...", ids.size(),
+    RCLCPP_WARN(this->get_logger(), "%lu marker(s) found, %d expected. Skipping frame...", ids.size(),
                 TARGET_NUM_CIRCLES);
   }
 
@@ -550,7 +652,8 @@ std:
   }
 }
 
-rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters)
+rcl_interfaces::msg::SetParametersResult
+MonoQRPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
 {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
@@ -560,136 +663,39 @@ rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp
     if (param.get_name() == "marker_size")
     {
       marker_size_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "New marker_size_: %f", marker_size_);
+      RCLCPP_INFO(this->get_logger(), "New marker_size_: %f", marker_size_);
     }
     if (param.get_name() == "delta_width_qr_center")
     {
       delta_width_qr_center_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "New delta_width_qr_center_: %f", delta_width_qr_center_);
+      RCLCPP_INFO(this->get_logger(), "New delta_width_qr_center_: %f", delta_width_qr_center_);
     }
     if (param.get_name() == "delta_height_qr_center")
     {
       delta_height_qr_center_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "New delta_height_qr_center_: %f", delta_height_qr_center_);
+      RCLCPP_INFO(this->get_logger(), "New delta_height_qr_center_: %f", delta_height_qr_center_);
     }
   }
   return result;
 }
-// void param_callback(velo2cam_calibration::MonocularConfig &config,
-//                     uint32_t level)
-// {
-//   marker_size_ = config.marker_size;
-//   ROS_INFO("New marker_size_: %f", marker_size_);
-//   delta_width_qr_center_ = config.delta_width_qr_center;
-//   ROS_INFO("New delta_width_qr_center_: %f", delta_width_qr_center_);
-//   delta_height_qr_center_ = config.delta_height_qr_center;
-//   ROS_INFO("New delta_height_qr_center_: %f", delta_height_qr_center_);
-// }
 
-void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr &msg)
+void MonoQRPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
 {
   WARMUP_DONE = !WARMUP_DONE;
   if (WARMUP_DONE)
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "Warm up done, pattern detection started");
+    RCLCPP_INFO(this->get_logger(), "Warm up done, pattern detection started");
   }
   else
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "Detection stopped. Warm up mode activated");
+    RCLCPP_INFO(this->get_logger(), "Detection stopped. Warm up mode activated");
   }
 }
 
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  nh = std::make_shared<rclcpp::Node>("mono_qr_pattern");
-  // ros::init(argc, argv, "mono_qr_pattern");
-  // ros::NodeHandle nh;
-  // ros::NodeHandle nh_("~");
-
-  // Initialize QR dictionary
-  dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-
-  cumulative_cloud =
-      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-
-  if (DEBUG)
-  {
-    qr_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("qr_pub", 1);
-    centers_cloud_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud_pub", 1);
-    cumulative_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
-  }
-  clusters_pub = nh.get()->create_publisher<calibration_interfaces::msg::ClusterCentroids>("clusters_pub", 1);
-
-  string csv_name;
-
-  // gen.add("marker_size", double_t, 0, "Size of the marker (m)", 0.2, 0.1, 0.5)
-  // gen.add("delta_width_qr_center", double_t, 0, "width increment from target center to qr center (m)", 0.55, 0, 1)
-  // gen.add("delta_height_qr_center", double_t, 0, "height increment from target center to qr center (m)", 0.35, 0, 1)
-  // Dynamic Parameters
-  // marker_size_ = nh.get()->declare_parameter("marker_size", 0.0);
-  // delta_width_qr_center_ = nh.get()->declare_parameter("delta_width_qr_center", 0.0);
-  // delta_height_qr_center_ = nh.get()->declare_parameter("delta_height_qr_center", 0.0);
-  // Non-Dynamic Parameters
-  delta_width_circles_ = nh.get()->declare_parameter("delta_width_circles", 0.5);
-  delta_height_circles_ = nh.get()->declare_parameter("delta_height_circles", 0.5);
-  marker_size_ = nh.get()->declare_parameter("marker_size", 0.2);
-  delta_width_qr_center_ = nh.get()->declare_parameter("delta_width_qr_center", 0.55);
-  delta_height_qr_center_ = nh.get()->declare_parameter("delta_height_qr_center", 0.35);
-  min_detected_markers_ = nh.get()->declare_parameter("min_detected_markers", 3);
-  cluster_tolerance_ = nh.get()->declare_parameter("cluster_tolerance", 0.05);
-  min_cluster_factor_ = nh.get()->declare_parameter("min_cluster_factor", 2.0 / 3.0);
-  skip_warmup_ = nh.get()->declare_parameter("skip_warmup", false);
-  save_to_file_ = nh.get()->declare_parameter("save_to_file", false);
-  csv_name = nh.get()->declare_parameter("csv_name", "mono_pattern_" + currentDateTime() + ".csv");
-
-  string image_topic, cinfo_topic;
-  image_topic = nh.get()->declare_parameter("image_topic", "/stereo_camera/left/image_rect_color");
-  cinfo_topic = nh.get()->declare_parameter("cinfo_topic", "/stereo_camera/left/camera_info");
-
-  message_filters::Subscriber<sensor_msgs::msg::Image> image_sub(nh, image_topic);
-  message_filters::Subscriber<sensor_msgs::msg::CameraInfo> cinfo_sub(nh, cinfo_topic);
-
-  message_filters::TimeSynchronizer<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>
-      sync(image_sub, cinfo_sub, 10);
-  // sync.registerCallback(boost::bind(&imageCallback, _1, _2));
-  sync.registerCallback(std::bind(&imageCallback, std::placeholders::_1, std::placeholders::_2));
-
-  // ROS param callback
-  auto ret = nh.get()->add_on_set_parameters_callback(param_callback);
-  // dynamic_reconfigure::Server<velo2cam_calibration::MonocularConfig> server;
-  // dynamic_reconfigure::Server<
-  //     velo2cam_calibration::MonocularConfig>::CallbackType f;
-  // f = boost::bind(param_callback, _1, _2);
-  // server.setCallback(f);
-
-  auto warmup_sub = nh.get()->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 1, warmup_callback);
-
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(nh.get()->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
-
-  // Just for statistics
-  if (save_to_file_)
-  {
-    ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(nh.get()->get_logger(), "Opening %s", os.str().c_str());
-      savefile.open(os.str().c_str());
-      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << endl;
-    }
-  }
-
+  auto nh = std::make_shared<MonoQRPattern>();
   rclcpp::spin(nh);
   cv::destroyAllWindows();
   return 0;

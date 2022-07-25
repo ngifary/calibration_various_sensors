@@ -11,6 +11,7 @@
 
     <!-- <node pkg="calibration" exec="mono_qr_pattern" name="mono_pattern_$(var sensor_id)" output="$(var stdout)"> -->
     <node pkg="calibration" exec="mono_qr_pattern" name="mono_pattern_$(var sensor_id)" output="screen">
+        <remap from="centers_cloud" to="mono_pattern_$(var sensor_id)/centers_cloud"/>
         <param name="image_topic" value="$(var camera_name)/$(var image_topic)" />
         <param name="cinfo_topic" value="$(var camera_name)/camera_info" />
         <param name="marker_size" value="$(var marker_size)"/>

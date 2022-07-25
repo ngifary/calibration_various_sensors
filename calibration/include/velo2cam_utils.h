@@ -296,7 +296,7 @@ public:
     _target_diagonal = sqrt(pow(width, 2) + pow(height, 2));
 
     // Compute candidates centroid
-    for (int i = 0; i < candidates.size(); ++i)
+    for (unsigned i = 0; i < candidates.size(); ++i)
     {
       _center.x += candidates[i].x;
       _center.y += candidates[i].y;
@@ -336,7 +336,7 @@ public:
     pcl::PointCloud<pcl::PointXYZ>::Ptr candidates_cloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     // Check if candidates are at 5% of target's diagonal/2 to their centroid
-    for (int i = 0; i < _candidates.size(); ++i)
+    for (unsigned i = 0; i < _candidates.size(); ++i)
     {
       candidates_cloud->push_back(_candidates[i]);
       float d = distance(_center, _candidates[i]);
@@ -350,7 +350,7 @@ public:
     std::vector<pcl::PointXYZ> sorted_centers;
     sortPatternCenters(candidates_cloud, sorted_centers);
     float perimeter = 0;
-    for (int i = 0; i < sorted_centers.size(); ++i)
+    for (unsigned i = 0; i < sorted_centers.size(); ++i)
     {
       float current_distance = distance(
           sorted_centers[i], sorted_centers[(i + 1) % sorted_centers.size()]);
@@ -394,7 +394,7 @@ void comb(int N, int K, std::vector<std::vector<int>> &groups)
     upper_factorial *= (N - i);
     lower_factorial *= (K - i);
   }
-  int n_permutations = upper_factorial / lower_factorial;
+  unsigned n_permutations = upper_factorial / lower_factorial;
 
   if (DEBUG)
     cout << N << " centers found. Iterating over " << n_permutations

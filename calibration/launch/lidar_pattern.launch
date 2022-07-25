@@ -52,6 +52,7 @@
 
   <node pkg="calibration" exec="lidar_pattern" name="lidar_pattern_$(var sensor_id)" output="screen">
     <remap from="cloud1" to="$(var cloud_topic)"/>
+    <remap from="centers_cloud" to="/lidar_pattern_$(var sensor_id)/centers_cloud"/>
     <param name="passthrough_radius_min" value="1.0" />
     <param name="passthrough_radius_max" value="6.0" />
   </node>

@@ -27,6 +27,7 @@
   <depend>cv_bridge</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>libopencv-dev</depend>
   <depend>pcl_ros</depend>
   <depend>image_geometry</depend>

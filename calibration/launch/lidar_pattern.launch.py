@@ -75,8 +75,8 @@ def generate_launch_description():
                     ],
                     parameters=[{
                         'filter_field_name': 'x',
-                        'filter_limit_min': -2.0,
-                        'filter_limit_max': 1.0,
+                        'filter_limit_min': 0.0,
+                        'filter_limit_max': 100.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                     }]),
@@ -89,11 +89,12 @@ def generate_launch_description():
         executable='lidar_pattern',
         name=['lidar_pattern_', sensor_id],
         remappings=[
-            ('cloud1', ['/lidar_pattern_', sensor_id, '/zyx_filtered'])
+            ('cloud1', ['/lidar_pattern_', sensor_id, '/zyx_filtered']),
+            ('centers_cloud', ['/lidar_pattern_', sensor_id, '/centers_cloud'])
         ],
         parameters=[{
-            'passthrough_radius_min': '1.0',
-            'passthrough_radius_max': '6.0'
+            'passthrough_radius_min': 1.0,
+            'passthrough_radius_max': 6.0
         }]
     )
 
@@ -101,4 +102,5 @@ def generate_launch_description():
         cloud_topic_launch_arg,
         sensor_id_launch_arg,
         container,
+        lidar_pattern_node
     ])

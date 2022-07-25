@@ -50,37 +50,141 @@
 
 using namespace std;
 using namespace sensor_msgs;
+namespace sync_policies = message_filters::sync_policies;
 
-int images_proc_ = 0, images_used_ = 0;
+class StereoPattern : public rclcpp::Node
+{
+public:
+  StereoPattern();
+  ~StereoPattern();
 
-double delta_width_circles_, delta_height_circles_;
-double circle_threshold_;
-double plane_distance_inliers_;
-double target_radius_tolerance_;
-double cluster_tolerance_;
-double min_cluster_factor_;
-int min_centers_found_;
-bool WARMUP_DONE = false;
-bool skip_warmup_;
-bool save_to_file_;
-std::ofstream savefile;
+private:
+  /* data */
+  void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
+                const pcl_msgs::msg::ModelCoefficients::ConstSharedPtr cam_plane_coeffs);
+  rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
+  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
 
-rclcpp::Publisher<pcl_msgs::msg::PointIndices>::SharedPtr inliers_pub;
-rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
-rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr plane_edges_pub, xy_pattern_pub, cumulative_pub;
-rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr final_pub;
+  int images_proc_ = 0, images_used_ = 0;
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
+  double delta_width_circles_, delta_height_circles_;
+  double circle_threshold_;
+  double plane_distance_inliers_;
+  double target_radius_tolerance_;
+  double cluster_tolerance_;
+  double min_cluster_factor_;
+  unsigned min_centers_found_;
+  bool WARMUP_DONE = false;
+  bool skip_warmup_;
+  bool save_to_file_;
+  std::ofstream savefile;
 
-std_msgs::msg::Header header_;
+  // Pubs Definition
+  rclcpp::Publisher<pcl_msgs::msg::PointIndices>::SharedPtr inliers_pub;
+  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr plane_edges_pub, xy_pattern_pub, cumulative_pub;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr final_pub;
 
-std::shared_ptr<rclcpp::Node> nh;
+  //Subs Definition
+  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> camera_cloud_sub_;
+  message_filters::Subscriber<pcl_msgs::msg::ModelCoefficients> cam_plane_coeffs_sub_;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
 
-void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
-              const pcl_msgs::msg::ModelCoefficients::ConstSharedPtr &cam_plane_coeffs)
+  /** \brief Synchronized image and camera info.*/
+  std::shared_ptr<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>> sync_;
+  /** \brief The maximum queue size (default: 3). */
+  int max_queue_size_ = 3;
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
+
+  std_msgs::msg::Header header_;
+};
+
+StereoPattern::StereoPattern() : Node("stereo_pattern")
+{
+  RCLCPP_INFO(this->get_logger(), "[Stereo] Starting....");
+
+  rclcpp::QoS qos(10);
+  auto rmw_qos_profile = qos.get_rmw_qos_profile();
+
+  camera_cloud_sub_.subscribe(this, "cloud2", rmw_qos_profile);
+  cam_plane_coeffs_sub_.subscribe(this, "cam_plane_coeffs", rmw_qos_profile);
+
+  if (DEBUG)
+  {
+    inliers_pub = this->create_publisher<pcl_msgs::msg::PointIndices>("inliers_pub", 1);
+    coeff_pub = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("coeff_pub", 1);
+    plane_edges_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("plane_edges_pub", 1);
+    xy_pattern_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("xy_pattern_pub", 1);
+    cumulative_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_pub", 1);
+  }
+  final_pub = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+
+  cumulative_cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+
+  sync_ = std::make_shared<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>>(max_queue_size_);
+
+  sync_->connectInput(camera_cloud_sub_, cam_plane_coeffs_sub_);
+
+  sync_->registerCallback(std::bind(&StereoPattern::callback, this, std::placeholders::_1, std::placeholders::_2));
+
+  string csv_name;
+
+  // Dynamic Parameters
+  circle_threshold_ = this->declare_parameter("circle_threshold", 0);
+  // Non-Dynamic Parameters
+  delta_width_circles_ = this->declare_parameter("delta_width_circles", 0.5);
+  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.4);
+  plane_distance_inliers_ = this->declare_parameter("plane_distance_inliers", 0.1);
+  target_radius_tolerance_ = this->declare_parameter("target_radius_tolerance", 0.01);
+  min_centers_found_ = this->declare_parameter("min_centers_found", TARGET_NUM_CIRCLES);
+  cluster_tolerance_ = this->declare_parameter("cluster_tolerance", 0.05);
+  min_cluster_factor_ = this->declare_parameter("min_cluster_factor", 0.5);
+  skip_warmup_ = this->declare_parameter("skip_warmup", false);
+  save_to_file_ = this->declare_parameter("save_to_file", false);
+  csv_name = this->declare_parameter("csv_name", "stereo_pattern_" + currentDateTime() + ".csv");
+
+  // ROS param callback
+  auto ret = this->add_on_set_parameters_callback(std::bind(&StereoPattern::param_callback, this, std::placeholders::_1));
+
+  warmup_sub = this->create_subscription<std_msgs::msg::Empty>(
+      "warmup_switch", 100, std::bind(&StereoPattern::warmup_callback, this, std::placeholders::_1));
+
+  if (skip_warmup_)
+  {
+    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+    WARMUP_DONE = true;
+  }
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    ostringstream os;
+    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+      savefile.open(os.str().c_str());
+      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
+               << endl;
+    }
+  }
+}
+
+StereoPattern::~StereoPattern()
+{
+  RCLCPP_INFO(this->get_logger(), "[Stereo] Terminating....");
+}
+
+void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
+                             const pcl_msgs::msg::ModelCoefficients::ConstSharedPtr cam_plane_coeffs)
 {
   if (DEBUG)
-    RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] Processing image...");
+    RCLCPP_INFO(this->get_logger(), "[Stereo] Processing image...");
 
   images_proc_++;
 
@@ -197,7 +301,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
     {
       if (found_centers.size() < 1)
       {
-        RCLCPP_WARN(nh.get()->get_logger(),
+        RCLCPP_WARN(this->get_logger(),
                     "[Stereo] Could not estimate a circle model for the given "
                     "dataset.");
       }
@@ -206,7 +310,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
     else
     {
       if (DEBUG)
-        RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] Found circle: %lu inliers", inliers->indices.size());
+        RCLCPP_INFO(this->get_logger(), "[Stereo] Found circle: %lu inliers", inliers->indices.size());
     }
 
     // Extract the inliers
@@ -238,7 +342,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
       min_centers_found_)
   { // Usually min_centers_found_ = TARGET_NUM_CIRCLES
     // Exit 1: centers not found
-    RCLCPP_WARN(nh.get()->get_logger(), "Not enough centers: %ld", found_centers.size());
+    RCLCPP_WARN(this->get_logger(), "Not enough centers: %ld", found_centers.size());
     return;
   }
 
@@ -255,11 +359,11 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
   std::vector<std::vector<int>> groups;
   comb(found_centers.size(), TARGET_NUM_CIRCLES, groups);
   double groups_scores[groups.size()]; // -1: invalid; 0-1 normalized score
-  for (int i = 0; i < groups.size(); ++i)
+  for (unsigned i = 0; i < groups.size(); ++i)
   {
     std::vector<pcl::PointXYZ> candidates;
     // Build candidates set
-    for (int j = 0; j < groups[i].size(); ++j)
+    for (unsigned j = 0; j < groups[i].size(); ++j)
     {
       pcl::PointXYZ center;
       center.x = found_centers[groups[i][j]][0];
@@ -278,12 +382,12 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
 
   int best_candidate_idx = -1;
   double best_candidate_score = -1;
-  for (int i = 0; i < groups.size(); ++i)
+  for (unsigned i = 0; i < groups.size(); ++i)
   {
     if (best_candidate_score == 1 && groups_scores[i] == 1)
     {
       // Exit 2: Several candidates fit target's geometry
-      RCLCPP_ERROR(nh.get()->get_logger(),
+      RCLCPP_ERROR(this->get_logger(),
                    "[Stereo] More than one set of candidates fit target's geometry. "
                    "Please, make sure your parameters are well set. Exiting callback");
       return;
@@ -298,7 +402,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
   if (best_candidate_idx == -1)
   {
     // Exit 3: No candidates fit target's geometry
-    RCLCPP_WARN(nh.get()->get_logger(),
+    RCLCPP_WARN(this->get_logger(),
                 "[Stereo] Unable to find a candidate set that matches target's "
                 "geometry");
     return;
@@ -306,7 +410,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_back_cloud(
       new pcl::PointCloud<pcl::PointXYZ>());
-  for (int j = 0; j < groups[best_candidate_idx].size(); ++j)
+  for (unsigned j = 0; j < groups[best_candidate_idx].size(); ++j)
   {
     pcl::PointXYZ point;
     point.x = found_centers[groups[best_candidate_idx][j]][0];
@@ -364,7 +468,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
   images_used_++;
   if (DEBUG)
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] %d/%d frames: %ld pts in cloud", images_used_,
+    RCLCPP_INFO(this->get_logger(), "[Stereo] %d/%d frames: %ld pts in cloud", images_used_,
                 images_proc_, cumulative_cloud->points.size());
   }
   pcl::PointCloud<pcl::PointXYZ>::Ptr final_cloud(
@@ -428,7 +532,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &camera_cloud,
   }
 }
 
-rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters)
+rcl_interfaces::msg::SetParametersResult StereoPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
 {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
@@ -438,120 +542,29 @@ rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp
     if (param.get_name() == "circle_threshold")
     {
       circle_threshold_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] New circle threshold: %f", circle_threshold_);
+      RCLCPP_INFO(this->get_logger(), "[Stereo] New circle threshold: %f", circle_threshold_);
     }
   }
   return result;
 }
-// void param_callback(velo2cam_calibration::StereoConfig &config,
-//                     uint32_t level)
-// {
-//   circle_threshold_ = config.circle_threshold;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] New circle threshold: %f", circle_threshold_);
-// }
 
-void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr &msg)
+void StereoPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
 {
   WARMUP_DONE = !WARMUP_DONE;
   if (WARMUP_DONE)
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] Warm up done, pattern detection started");
+    RCLCPP_INFO(this->get_logger(), "[Stereo] Warm up done, pattern detection started");
   }
   else
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "[Stereo] Detection stopped. Warm up mode activated");
+    RCLCPP_INFO(this->get_logger(), "[Stereo] Detection stopped. Warm up mode activated");
   }
 }
 
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  nh = std::make_shared<rclcpp::Node>("stereo_pattern");
-  // ros::init(argc, argv, "stereo_pattern");
-  // ros::NodeHandle nh;       // GLOBAL
-  // ros::NodeHandle nh_("~"); // LOCAL
-
-  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> camera_cloud_sub_;
-  message_filters::Subscriber<pcl_msgs::msg::ModelCoefficients>
-      cam_plane_coeffs_sub_;
-
-  camera_cloud_sub_.subscribe(nh, "cloud2");
-  cam_plane_coeffs_sub_.subscribe(nh, "cam_plane_coeffs");
-  // camera_cloud_sub_.subscribe(nh_, "cloud2", 1);
-  // cam_plane_coeffs_sub_.subscribe(nh_, "cam_plane_coeffs", 1);
-
-  if (DEBUG)
-  {
-    inliers_pub = nh.get()->create_publisher<pcl_msgs::msg::PointIndices>("inliers_pub", 1);
-    coeff_pub = nh.get()->create_publisher<pcl_msgs::msg::ModelCoefficients>("coeff_pub", 1);
-    plane_edges_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("plane_edges_pub", 1);
-    xy_pattern_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("xy_pattern_pub", 1);
-    cumulative_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_pub", 1);
-  }
-  final_pub = nh.get()->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
-
-  cumulative_cloud =
-      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-
-  typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::PointCloud2,
-                                                    pcl_msgs::msg::ModelCoefficients>
-      ExSync;
-  message_filters::Synchronizer<ExSync> sync_(ExSync(10), camera_cloud_sub_,
-                                              cam_plane_coeffs_sub_);
-  // sync_.registerCallback(boost::bind(&callback, _1, _2));
-  sync_.registerCallback(std::bind(&callback, std::placeholders::_1, std::placeholders::_2));
-
-  string csv_name;
-
-  // gen.add("circle_threshold", double_t, 0, "Cam circle threshold", 0.01, 0, 5)
-  // Dynamic Parameters
-  circle_threshold_ = nh.get()->declare_parameter("circle_threshold", 0);
-  // Non-Dynamic Parameters
-  delta_width_circles_ = nh.get()->declare_parameter("delta_width_circles", 0.5);
-  delta_height_circles_ = nh.get()->declare_parameter("delta_height_circles", 0.4);
-  plane_distance_inliers_ = nh.get()->declare_parameter("plane_distance_inliers", 0.1);
-  target_radius_tolerance_ = nh.get()->declare_parameter("target_radius_tolerance", 0.01);
-  min_centers_found_ = nh.get()->declare_parameter("min_centers_found", TARGET_NUM_CIRCLES);
-  cluster_tolerance_ = nh.get()->declare_parameter("cluster_tolerance", 0.05);
-  min_cluster_factor_ = nh.get()->declare_parameter("min_cluster_factor", 0.5);
-  skip_warmup_ = nh.get()->declare_parameter("skip_warmup", false);
-  save_to_file_ = nh.get()->declare_parameter("save_to_file", false);
-  csv_name = nh.get()->declare_parameter("csv_name", "stereo_pattern_" + currentDateTime() + ".csv");
-
-  auto ret = nh.get()->add_on_set_parameters_callback(param_callback);
-  // dynamic_reconfigure::Server<velo2cam_calibration::StereoConfig> server;
-  // dynamic_reconfigure::Server<velo2cam_calibration::StereoConfig>::CallbackType
-  //     f;
-  // f = boost::bind(param_callback, _1, _2);
-  // server.setCallback(f);
-
-  auto warmup_sub = nh.get()->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 1, warmup_callback);
-
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(nh.get()->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
-
-  // Just for statistics
-  if (save_to_file_)
-  {
-    ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(nh.get()->get_logger(), "Opening %s", os.str().c_str());
-      savefile.open(os.str().c_str());
-      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << endl;
-    }
-  }
-
+  auto nh = std::make_shared<StereoPattern>();
   rclcpp::spin(nh);
   return 0;
 }

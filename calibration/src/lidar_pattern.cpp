@@ -27,8 +27,6 @@
 
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
-// #include <dynamic_reconfigure/server.h>
-// #include "node_parameters_interface.hpp"
 #include "pcl/common/eigen.h"
 #include "pcl/common/transforms.h"
 #include "pcl/filters/extract_indices.h"
@@ -37,57 +35,155 @@
 #include "pcl/point_types.h"
 #include "pcl/segmentation/sac_segmentation.h"
 #include "pcl_conversions/pcl_conversions.h"
-// #include <ros/ros.h>
 #include "rclcpp/rclcpp.hpp"
-// #include <sensor_msgs/PointCloud2.h>
 #include "sensor_msgs/msg/point_cloud2.hpp"
-// #include <std_msgs/Empty.h>
 #include "std_msgs/msg/empty.hpp"
-// #include <velo2cam_calibration/ClusterCentroids.h>
 #include "calibration_interfaces/msg/cluster_centroids.hpp"
-// #include <velo2cam_calibration/LidarConfig.h>
 #include "velo2cam_utils.h"
 
 using namespace std;
 using namespace sensor_msgs;
 
-rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cumulative_pub, range_pub;
-rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub, rotated_pattern_pub;
-rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
-rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr centers_pub;
-pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
+class LidarPattern : public rclcpp::Node
+{
+public:
+  LidarPattern();
+  ~LidarPattern();
 
-// Dynamic parameters
-double threshold_;
-double passthrough_radius_min_, passthrough_radius_max_, circle_radius_,
-    centroid_distance_min_, centroid_distance_max_;
-double delta_width_circles_, delta_height_circles_;
-Eigen::Vector3f axis_;
-double angle_threshold_;
-// Non-Dynamic
-int rings_count_;
-double cluster_tolerance_;
-int clouds_proc_ = 0, clouds_used_ = 0;
-int min_centers_found_;
-double plane_threshold_;
-double gradient_threshold_;
-double plane_distance_inliers_;
-double circle_threshold_;
-double target_radius_tolerance_;
-double min_cluster_factor_;
-bool skip_warmup_;
-bool save_to_file_;
-std::ofstream savefile;
+private:
+  void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser_cloud);
+  rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
+  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
+  /* data */
+  // Pubs Definition
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cumulative_pub, range_pub;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub, rotated_pattern_pub;
+  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr centers_pub;
 
-bool WARMUP_DONE = false;
+  // Subs Definition
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
 
-std::shared_ptr<rclcpp::Node> nh;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
 
-void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
+  // Node Dynamic parameters
+  double threshold_;
+  double passthrough_radius_min_, passthrough_radius_max_, circle_radius_,
+      centroid_distance_min_, centroid_distance_max_;
+  double delta_width_circles_, delta_height_circles_;
+  Eigen::Vector3f axis_;
+  double angle_threshold_;
+
+  // Non-Dynamic
+  int rings_count_;
+  double cluster_tolerance_;
+  int clouds_proc_ = 0, clouds_used_ = 0;
+  int min_centers_found_;
+  double plane_threshold_;
+  double gradient_threshold_;
+  double plane_distance_inliers_;
+  double circle_threshold_;
+  double target_radius_tolerance_;
+  double min_cluster_factor_;
+  bool skip_warmup_;
+  bool save_to_file_;
+  std::ofstream savefile;
+
+  bool WARMUP_DONE = false;
+};
+
+LidarPattern::LidarPattern() : Node("lidar_pattern")
+{
+  RCLCPP_INFO(this->get_logger(), "[LiDAR] Starting....");
+
+  sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+      "cloud1", 100, std::bind(&LidarPattern::callback, this, std::placeholders::_1));
+
+  pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
+
+  range_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("range_filtered_cloud", 1);
+  if (DEBUG)
+  {
+    pattern_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
+    rotated_pattern_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
+    cumulative_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
+  }
+  centers_pub = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  coeff_pub = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
+
+  string csv_name;
+
+  // Dynamic Parameters
+  axis_[0] = this->declare_parameter("x", 0);
+  axis_[1] = this->declare_parameter("y", 0);
+  axis_[2] = this->declare_parameter("z", 1);
+  angle_threshold_ = this->declare_parameter("angle_threshold", 0.55);
+  circle_radius_ = this->declare_parameter("circle_radius", 0.12);
+  passthrough_radius_min_ = this->declare_parameter("passthrough_radius_min", 1.0);
+  passthrough_radius_max_ = this->declare_parameter("passthrough_radius_max", 6.0);
+  centroid_distance_min_ = this->declare_parameter("centroid_distance_min", 0.15);
+  centroid_distance_max_ = this->declare_parameter("centroid_distance_max", 0.8);
+  // Non-Dynamic Parameters
+  delta_width_circles_ = this->declare_parameter("delta_width_circles", 0.5);
+  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.4);
+  plane_threshold_ = this->declare_parameter("plane_threshold", 0.1);
+  gradient_threshold_ = this->declare_parameter("gradient_threshold", 0.1);
+  plane_distance_inliers_ = this->declare_parameter("plane_distance_inliers", 0.1);
+  circle_threshold_ = this->declare_parameter("circle_threshold", 0.05);
+  target_radius_tolerance_ = this->declare_parameter("target_radius_tolerance", 0.01);
+  cluster_tolerance_ = this->declare_parameter("cluster_tolerance", 0.05);
+  min_centers_found_ = this->declare_parameter("min_centers_found", TARGET_NUM_CIRCLES);
+  min_cluster_factor_ = this->declare_parameter("min_cluster_factor", 0.5);
+  rings_count_ = this->declare_parameter("rings_count", 64);
+  skip_warmup_ = this->declare_parameter("skip_warmup", false);
+  save_to_file_ = this->declare_parameter("save_to_file", false);
+  csv_name = this->declare_parameter("csv_name", "lidar_pattern_" + currentDateTime() + ".csv");
+
+  cumulative_cloud =
+      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+
+  auto ret = this->add_on_set_parameters_callback(std::bind(&LidarPattern::param_callback, this, std::placeholders::_1));
+
+  warmup_sub = this->create_subscription<std_msgs::msg::Empty>(
+      "warmup_switch", 100, std::bind(&LidarPattern::warmup_callback, this, std::placeholders::_1));
+
+  if (skip_warmup_)
+  {
+    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+    WARMUP_DONE = true;
+  }
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    ostringstream os;
+    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+      savefile.open(os.str().c_str());
+      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
+               << endl;
+    }
+  }
+}
+
+LidarPattern::~LidarPattern()
+{
+  RCLCPP_INFO(this->get_logger(), "[LiDAR] Terminating....");
+}
+
+void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser_cloud)
 {
   if (DEBUG)
-    RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Processing cloud...");
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] Processing cloud...");
 
+  // TODO: Check algorithm to find edges_cloud
   pcl::PointCloud<Velodyne::Point>::Ptr velocloud(
       new pcl::PointCloud<Velodyne::Point>),
       velo_filtered(new pcl::PointCloud<Velodyne::Point>),
@@ -132,7 +228,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   if (inliers->indices.size() == 0)
   {
     // Exit 1: plane not found
-    RCLCPP_WARN(nh.get()->get_logger(),
+    RCLCPP_WARN(this->get_logger(),
                 "[LiDAR] Could not estimate a planar model for the given dataset.");
     return;
   }
@@ -181,7 +277,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   if (edges_cloud->points.size() == 0)
   {
     // Exit 2: pattern edges not found
-    RCLCPP_WARN(nh.get()->get_logger(), "[LiDAR] Could not detect pattern edges.");
+    RCLCPP_WARN(this->get_logger(), "[LiDAR] Could not detect pattern edges.");
     return;
   }
 
@@ -284,7 +380,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
 
   pcl::ExtractIndices<pcl::PointXYZ> extract;
   if (DEBUG)
-    RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Searching for points in cloud of size %lu",
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] Searching for points in cloud of size %lu",
                 xy_cloud->points.size());
   while (xy_cloud->points.size() > 3)
   {
@@ -293,7 +389,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
     if (inliers3->indices.size() == 0)
     {
       if (DEBUG)
-        RCLCPP_INFO(nh.get()->get_logger(),
+        RCLCPP_INFO(this->get_logger(),
                     "[LiDAR] Optimized circle segmentation failed, trying unoptimized "
                     "version");
       circle_segmentation.setOptimizeCoefficients(false);
@@ -325,15 +421,19 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
     xy_cloud.swap(cloud_f);
 
     if (DEBUG)
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Remaining points in cloud %lu",
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] Remaining points in cloud %lu",
                   xy_cloud->points.size());
   }
 
   if (centroid_candidates->size() < TARGET_NUM_CIRCLES)
   {
     // Exit 3: all centers not found
-    RCLCPP_WARN(nh.get()->get_logger(), "[LiDAR] Not enough centers: %ld", centroid_candidates->size());
+    RCLCPP_WARN(this->get_logger(), "[LiDAR] Not enough centers: %ld of %d", centroid_candidates->size(), TARGET_NUM_CIRCLES);
     return;
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] Enough centers: %ld", centroid_candidates->size());
   }
 
   /**
@@ -349,11 +449,11 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   std::vector<std::vector<int>> groups;
   comb(centroid_candidates->size(), TARGET_NUM_CIRCLES, groups);
   double groups_scores[groups.size()]; // -1: invalid; 0-1 normalized score
-  for (int i = 0; i < groups.size(); ++i)
+  for (unsigned i = 0; i < groups.size(); ++i)
   {
     std::vector<pcl::PointXYZ> candidates;
     // Build candidates set
-    for (int j = 0; j < groups[i].size(); ++j)
+    for (unsigned j = 0; j < groups[i].size(); ++j)
     {
       pcl::PointXYZ center;
       center.x = centroid_candidates->at(groups[i][j]).x;
@@ -372,12 +472,12 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
 
   int best_candidate_idx = -1;
   double best_candidate_score = -1;
-  for (int i = 0; i < groups.size(); ++i)
+  for (unsigned i = 0; i < groups.size(); ++i)
   {
     if (best_candidate_score == 1 && groups_scores[i] == 1)
     {
       // Exit 4: Several candidates fit target's geometry
-      RCLCPP_ERROR(nh.get()->get_logger(),
+      RCLCPP_ERROR(this->get_logger(),
                    "[LiDAR] More than one set of candidates fit target's geometry. "
                    "Please, make sure your parameters are well set. Exiting callback");
       return;
@@ -392,7 +492,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   if (best_candidate_idx == -1)
   {
     // Exit 5: No candidates fit target's geometry
-    RCLCPP_WARN(nh.get()->get_logger(),
+    RCLCPP_WARN(this->get_logger(),
                 "[LiDAR] Unable to find a candidate set that matches target's "
                 "geometry");
     return;
@@ -401,7 +501,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   // Build selected centers set
   pcl::PointCloud<pcl::PointXYZ>::Ptr rotated_back_cloud(
       new pcl::PointCloud<pcl::PointXYZ>());
-  for (int j = 0; j < groups[best_candidate_idx].size(); ++j)
+  for (unsigned j = 0; j < groups[best_candidate_idx].size(); ++j)
   {
     pcl::PointXYZ center_rotated_back = pcl::transformPoint(
         centroid_candidates->at(groups[best_candidate_idx][j]),
@@ -447,7 +547,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   coeff_pub->publish(m_coeff);
 
   if (DEBUG)
-    RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] %d/%d frames: %ld pts in cloud", clouds_used_,
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] %d/%d frames: %ld pts in cloud", clouds_used_,
                 clouds_proc_, cumulative_cloud->points.size());
 
   // Create cloud for publishing centers
@@ -486,7 +586,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
 
     centers_pub->publish(to_send);
     if (DEBUG)
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Pattern centers published");
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] Pattern centers published");
 
     if (save_to_file_)
     {
@@ -499,6 +599,10 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
       }
       savefile << cumulative_cloud->width;
     }
+  }
+  else
+  {
+    RCLCPP_ERROR(this->get_logger(), "Not enough circle found");
   }
 
   if (save_to_file_)
@@ -515,7 +619,7 @@ void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &laser_cloud)
   }
 }
 
-rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters)
+rcl_interfaces::msg::SetParametersResult LidarPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
 {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
@@ -525,204 +629,76 @@ rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp
     if (param.get_name() == "passthrough_radius_min")
     {
       passthrough_radius_min_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New passthrough_radius_min_ threshold: %f",
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New passthrough_radius_min_ threshold: %f",
                   passthrough_radius_min_);
     }
     if (param.get_name() == "passthrough_radius_max")
     {
       passthrough_radius_max_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New passthrough_radius_max_ threshold: %f",
-              passthrough_radius_max_);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New passthrough_radius_max_ threshold: %f",
+                  passthrough_radius_max_);
     }
     if (param.get_name() == "circle_radius")
     {
       circle_radius_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New pattern circle radius: %f", circle_radius_);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New pattern circle radius: %f", circle_radius_);
     }
     if (param.get_name() == "x")
     {
       axis_[0] = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
-              axis_[0], axis_[1], axis_[2]);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
+                  axis_[0], axis_[1], axis_[2]);
     }
     if (param.get_name() == "y")
     {
       axis_[1] = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
-              axis_[0], axis_[1], axis_[2]);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
+                  axis_[0], axis_[1], axis_[2]);
     }
     if (param.get_name() == "z")
     {
       axis_[1] = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
-              axis_[0], axis_[1], axis_[2]);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
+                  axis_[0], axis_[1], axis_[2]);
     }
     if (param.get_name() == "angle_threshold")
     {
       angle_threshold_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New angle threshold: %f", angle_threshold_);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New angle threshold: %f", angle_threshold_);
     }
     if (param.get_name() == "centroid_distance_min")
     {
       centroid_distance_min_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New minimum distance between centroids: %f",
-              centroid_distance_min_);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New minimum distance between centroids: %f",
+                  centroid_distance_min_);
     }
     if (param.get_name() == "centroid_distance_max")
     {
       centroid_distance_max_ = param.as_double();
-      RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New maximum distance between centroids: %f",
-              centroid_distance_max_);
+      RCLCPP_INFO(this->get_logger(), "[LiDAR] New maximum distance between centroids: %f",
+                  centroid_distance_max_);
     }
   }
   return result;
 }
 
-// void param_callback(velo2cam_calibration::LidarConfig &config, uint32_t level)
-// void param_callback(const std::vector<rclcpp::Parameter> &parameters, uint32_t level)
-// {
-//   passthrough_radius_min_ = nh.get()->get_parameter("passthrough_radius_min").as_double();
-//   // passthrough_radius_min_ = config.passthrough_radius_min;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New passthrough_radius_min_ threshold: %f",
-//               passthrough_radius_min_);
-//   passthrough_radius_max_ = nh.get()->get_parameter("passthrough_radius_max").as_double();
-//   // passthrough_radius_max_ = config.passthrough_radius_max;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New passthrough_radius_max_ threshold: %f",
-//               passthrough_radius_max_);
-//   circle_radius_ = nh.get()->get_parameter("circle_radius").as_double();
-//   // circle_radius_ = config.circle_radius;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New pattern circle radius: %f", circle_radius_);
-//   axis_[0] = nh.get()->get_parameter("x").as_double();
-//   axis_[1] = nh.get()->get_parameter("y").as_double();
-//   axis_[2] = nh.get()->get_parameter("z").as_double();
-//   // axis_[0] = config.x;
-//   // axis_[1] = config.y;
-//   // axis_[2] = config.z;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New normal axis for plane segmentation: %f, %f, %f",
-//               axis_[0], axis_[1], axis_[2]);
-//   angle_threshold_ = nh.get()->get_parameter("angle_threshold").as_double();
-//   // angle_threshold_ = config.angle_threshold;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New angle threshold: %f", angle_threshold_);
-//   centroid_distance_min_ = nh.get()->get_parameter("centroid_distance_min").as_double();
-//   // centroid_distance_min_ = config.centroid_distance_min;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New minimum distance between centroids: %f",
-//               centroid_distance_min_);
-//   centroid_distance_max_ = nh.get()->get_parameter("centroid_distance_max").as_double();
-//   // centroid_distance_max_ = config.centroid_distance_max;
-//   RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] New maximum distance between centroids: %f",
-//               centroid_distance_max_);
-// }
-
-void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr &msg)
+void LidarPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
 {
   WARMUP_DONE = !WARMUP_DONE;
   if (WARMUP_DONE)
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Warm up done, pattern detection started");
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] Warm up done, pattern detection started");
   }
   else
   {
-    RCLCPP_INFO(nh.get()->get_logger(), "[LiDAR] Detection stopped. Warm up mode activated");
+    RCLCPP_INFO(this->get_logger(), "[LiDAR] Detection stopped. Warm up mode activated");
   }
 }
 
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  nh = std::make_shared<rclcpp::Node>("lidar_pattern");
-  // ros::init(argc, argv, "lidar_pattern");
-  // ros::NodeHandle nh;       // GLOBAL
-  // ros::NodeHandle nh_("~"); // LOCAL
-  auto sub = nh.get()->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
-      "cloud1", 100, callback);
-  // ros::Subscriber sub = nh_.subscribe("cloud1", 1, callback);
-  pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
-
-  range_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("range_filtered_cloud", 1);
-  if (DEBUG)
-  {
-    pattern_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
-    rotated_pattern_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
-    cumulative_pub = nh.get()->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
-  }
-  centers_pub = nh.get()->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
-  coeff_pub = nh.get()->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
-
-  string csv_name;
-
-//   gen.add("x", double_t, 0, "x coord", 0, 0, 1)
-// gen.add("y", double_t, 0, "y coord", 0, 0, 1)
-// gen.add("z", double_t, 0, "z coord", 1, 0, 1)
-// gen.add("angle_threshold", double_t, 0, "Angle threshold for plane segmentation", 0.55, 0, pi/2)
-// gen.add("circle_radius", double_t, 0, "Radius of pattern's circles", 0.12, 0, 1)
-// gen.add("passthrough_radius_min", double_t, 0, "Min radius for passthrough", 1.0, 0, 10)
-// gen.add("passthrough_radius_max", double_t, 0, "Max radius for passthrough", 6.0, 0, 10)
-// gen.add("centroid_distance_min", double_t, 0, "Min distance to the centroid", 0.15, 0.0, 1.0)
-// gen.add("centroid_distance_max", double_t, 0, "Max distance to the centroid", 0.8, 0.0, 1.0)
-  // Dynamic Parameters
-  axis_[0] = nh.get()->declare_parameter("x", 0);
-  axis_[1] = nh.get()->declare_parameter("y", 0);
-  axis_[2] = nh.get()->declare_parameter("z", 1);
-  angle_threshold_ = nh.get()->declare_parameter("angle_threshold", 0.55);
-  circle_radius_ = nh.get()->declare_parameter("circle_radius", 0.12);
-  passthrough_radius_min_ = nh.get()->declare_parameter("passthrough_radius_min", 1.0);
-  passthrough_radius_max_ = nh.get()->declare_parameter("passthrough_radius_max", 6.0);
-  centroid_distance_min_ = nh.get()->declare_parameter("centroid_distance_min", 0.15);
-  centroid_distance_max_ = nh.get()->declare_parameter("centroid_distance_max", 0.8);
-  // Non-Dynamic Parameters
-  delta_width_circles_ = nh.get()->declare_parameter("delta_width_circles", 0.5);
-  delta_height_circles_ = nh.get()->declare_parameter("delta_height_circles", 0.4);
-  plane_threshold_ = nh.get()->declare_parameter("plane_threshold", 0.1);
-  gradient_threshold_ = nh.get()->declare_parameter("gradient_threshold", 0.1);
-  plane_distance_inliers_ = nh.get()->declare_parameter("plane_distance_inliers", 0.1);
-  circle_threshold_ = nh.get()->declare_parameter("circle_threshold", 0.05);
-  target_radius_tolerance_ = nh.get()->declare_parameter("target_radius_tolerance", 0.01);
-  cluster_tolerance_ = nh.get()->declare_parameter("cluster_tolerance", 0.05);
-  min_centers_found_ = nh.get()->declare_parameter("min_centers_found", TARGET_NUM_CIRCLES);
-  min_cluster_factor_ = nh.get()->declare_parameter("min_cluster_factor", 0.5);
-  rings_count_ = nh.get()->declare_parameter("rings_count", 64);
-  skip_warmup_ = nh.get()->declare_parameter("skip_warmup", false);
-  save_to_file_ = nh.get()->declare_parameter("save_to_file", false);
-  csv_name = nh.get()->declare_parameter("csv_name", "lidar_pattern_" + currentDateTime() + ".csv");
-
-  cumulative_cloud =
-      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-
-  auto ret = nh.get()->add_on_set_parameters_callback(param_callback);
-  // dynamic_reconfigure::Server<velo2cam_calibration::LidarConfig> server;
-  // dynamic_reconfigure::Server<velo2cam_calibration::LidarConfig>::CallbackType
-  //     f;
-  // f = boost::bind(param_callback, _1, _2);
-  // server.setCallback(f);
-
-  auto warmup_sub = nh.get()->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 100, warmup_callback);
-  // ros::Subscriber warmup_sub =
-  //     nh.subscribe("warmup_switch", 1, warmup_callback);
-
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(nh.get()->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
-
-  // Just for statistics
-  if (save_to_file_)
-  {
-    ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(nh.get()->get_logger(), "Opening %s", os.str().c_str());
-      savefile.open(os.str().c_str());
-      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << endl;
-    }
-  }
+  auto nh = std::make_shared<LidarPattern>();
 
   rclcpp::spin(nh);
   return 0;
