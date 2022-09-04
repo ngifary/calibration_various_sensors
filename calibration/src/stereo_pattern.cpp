@@ -32,7 +32,7 @@
 #include "pcl/filters/extract_indices.h"
 #include "pcl/sample_consensus/sac_model_plane.h"
 #include "pcl/segmentation/sac_segmentation.h"
-#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_conversions/pcl_conversions.hpp"
 // #include <pcl_msgs/ModelCoefficients.h>
 #include "pcl_msgs/msg/model_coefficients.hpp"
 // #include <pcl_msgs/PointIndices.h>

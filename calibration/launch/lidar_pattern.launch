@@ -1,7 +1,7 @@
 <launch>
 
   <!-- <arg name="stdout" default="screen" /> -->
-  <arg name="cloud_topic" default="sick_points" />
+  <arg name="cloud_topic" default="laser_points" />
   <arg name="sensor_id" default="0" />
 
   <!-- <node pkg="nodelet" exec="nodelet" name="pcl_manager_$(var sensor_id)" args="manager" output="screen"/>

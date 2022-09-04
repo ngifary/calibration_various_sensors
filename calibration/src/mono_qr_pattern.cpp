@@ -30,7 +30,7 @@
 #include "message_filters/time_synchronizer.h"
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
-#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_conversions/pcl_conversions.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"

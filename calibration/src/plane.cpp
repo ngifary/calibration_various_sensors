@@ -29,7 +29,7 @@
 #include "pcl/point_cloud.h"
 #include "pcl/point_types.h"
 #include "pcl/segmentation/sac_segmentation.h"
-#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_conversions/pcl_conversions.hpp"
 // #include <pcl_msgs/ModelCoefficients.h>
 #include "pcl_msgs/msg/model_coefficients.hpp"
 // #include <pcl_msgs/PointIndices.h>

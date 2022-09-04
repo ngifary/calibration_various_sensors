@@ -1,39 +1,39 @@
 /*
-  sick2cam_calibration - Automatic calibration algorithm for extrinsic
+  laser2cam_calibration - Automatic calibration algorithm for extrinsic
   parameters of a stereo camera and a velodyne Copyright (C) 2017-2021 Jorge
   Beltran, Carlos Guindel
 
-  This file is part of sick2cam_calibration.
+  This file is part of laser2cam_calibration.
 
-  sick2cam_calibration is free software: you can redistribute it and/or modify
+  laser2cam_calibration is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 2 of the License, or
   (at your option) any later version.
 
-  sick2cam_calibration is distributed in the hope that it will be useful,
+  laser2cam_calibration is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with sick2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
+  along with laser2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 /*
-  sick2cam_calibration: Perform the registration step
+  laser2cam_calibration: Perform the registration step
 */
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "pcl/registration/transformation_estimation_svd.h"
-#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_conversions/pcl_conversions.hpp"
 #include "pcl_ros/transforms.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "std_msgs/msg/int32.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/convert.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/static_transform_broadcaster.h"
@@ -49,11 +49,14 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <cinttypes>
+#include <limits>
+#include <utility>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
-using namespace std;
 using namespace sensor_msgs;
 using namespace std::chrono_literals;
 
@@ -66,7 +69,7 @@ public:
     typedef Eigen::Matrix<double, 12, 12> Matrix12d;
     typedef Eigen::Matrix<double, 12, 1> Vector12d;
 
-    Registration();
+    Registration(const rclcpp::NodeOptions &options);
     ~Registration();
 
     bool isFinished()
@@ -150,11 +153,12 @@ private:
     bool results_every_pose;
 };
 
-Registration::Registration() :  Node("registration"), 
-                                tf_buffer_(this->get_clock()),
-                                tf_listener_(tf_buffer_)
+Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("registration", options),
+                               tf_buffer_(this->get_clock()),
+                               tf_listener_(tf_buffer_)
 {
     RCLCPP_INFO(this->get_logger(), "Calibration Starting....");
+    std::cout << "It's here!-1";
 
     // Node Parameters Definition
     sync_iterations = this->declare_parameter("sync_iterations", false);
@@ -182,8 +186,11 @@ Registration::Registration() :  Node("registration"),
         pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
 
     // Subs Definition
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    std::cout << "It's here!";
     sensor1_sub = this->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
         "cloud1", 100, std::bind(&Registration::sensor1_callback, this, std::placeholders::_1));
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
     sensor2_sub = this->create_subscription<calibration_interfaces::msg::ClusterCentroids>(
         "cloud2", 100, std::bind(&Registration::sensor2_callback, this, std::placeholders::_1));
 
@@ -542,11 +549,13 @@ void Registration::calibrateExtrinsics(int seek_iter = -1)
 void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCentroids::ConstSharedPtr sensor1_centroids)
 {
     RCLCPP_INFO(this->get_logger(), "Sensor 1 callback");
+    std::cout << "It's here!";
     sensor1_frame_id = sensor1_centroids->header.frame_id;
     if (!S1_WARMUP_DONE)
     {
-        RCLCPP_INFO(this->get_logger(), "Mashok");
+        RCLCPP_INFO(this->get_logger(), "Sensor 1.1 callback");
         S1_WARMUP_COUNT++;
+        std::cout << "It's here!2";
         cout << "Clusters from " << sensor1_frame_id << ": " << S1_WARMUP_COUNT
              << "/10" << '\r' << flush;
         if (S1_WARMUP_COUNT >= 10) // TODO: Change to param?
@@ -558,6 +567,7 @@ void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCe
             cout << "Clusters from " << sensor1_frame_id
                  << " received. Is the warmup done? [Y/n]" << endl;
             string answer;
+            answer.clear();
             getline(cin, answer);
             if (answer == "y" || answer == "Y" || answer == "")
             {
@@ -1019,6 +1029,14 @@ int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
     auto nh = std::make_shared<Registration>();
+    std::promise<void> stop_async_spinner;
+    std::thread async_spinner_thread(
+        [stop_token = stop_async_spinner.get_future(), nh]()
+        {
+            rclcpp::executors::SingleThreadedExecutor executor;
+            executor.add_node(nh);
+            executor.spin_until_future_complete(stop_token);
+        });
 
     // constexpr char empty_service_name[] = "empty_service";
 
@@ -1028,6 +1046,8 @@ int main(int argc, char *argv[])
     // spin_until_future_complete(nh, future, std::chrono::seconds(2));
 
     // rclcpp::spin_until_future_complete(nh, future, std::chrono::seconds(3));
+    stop_async_spinner.set_value();
+    async_spinner_thread.join();
     rclcpp::Rate loop_rate(30);
     while (rclcpp::ok() && !nh.get()->isFinished())
     {

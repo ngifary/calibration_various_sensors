@@ -17,7 +17,7 @@ def generate_launch_description():
 
     # args that can be set from the command line or a default will be used
     cloud_topic_launch_arg = DeclareLaunchArgument(
-        'cloud_topic', default_value='sick_points'
+        'cloud_topic', default_value='laser_points'
     )
     sensor_id_launch_arg = DeclareLaunchArgument(
         "sensor_id", default_value='0'
@@ -33,7 +33,7 @@ def generate_launch_description():
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
-                    name=['pass_through_z_sick_', sensor_id],
+                    name=['pass_through_z_laser_', sensor_id],
                     remappings=[
                         ('input', [cloud_topic]),
                         ('output', ['/lidar_pattern_',
@@ -49,7 +49,7 @@ def generate_launch_description():
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
-                    name=['pass_through_y_sick_', sensor_id],
+                    name=['pass_through_y_laser_', sensor_id],
                     remappings=[
                         ('input', ['/lidar_pattern_',
                          sensor_id, '/z_filtered']),
@@ -66,7 +66,7 @@ def generate_launch_description():
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
-                    name=['pass_through_x_sick_', sensor_id],
+                    name=['pass_through_x_laser_', sensor_id],
                     remappings=[
                         ('input', ['/lidar_pattern_',
                          sensor_id, '/zy_filtered']),

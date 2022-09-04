@@ -46,10 +46,10 @@ def generate_launch_description():
                     sensor2_type,
                     '" == "stereo"'])
 
-    velo2cam_calibration_node = Node(
+    laser2cam_calibration_node = Node(
         package='calibration',
-        executable='sick2cam_calibration',
-        name='sick2cam_calibration',
+        executable='laser2cam_calibration',
+        name='laser2cam_calibration',
         remappings=[
                 ('cloud1', ['/', sensor1_type, '_pattern_',
                  sensor1_id, '/centers_cloud']),
@@ -68,5 +68,5 @@ def generate_launch_description():
         sensor2_type_launch_arg,
         sensor1_id_launch_arg,
         sensor2_id_launch_arg,
-        velo2cam_calibration_node
+        laser2cam_calibration_node
     ])
