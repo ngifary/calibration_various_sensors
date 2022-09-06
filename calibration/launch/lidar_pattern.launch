@@ -4,7 +4,7 @@
   <arg name="cloud_topic" default="laser_points" />
   <arg name="sensor_id" default="0" />
 
-  <!-- <node pkg="nodelet" exec="nodelet" name="pcl_manager_$(var sensor_id)" args="manager" output="screen"/>
+  <node pkg="nodelet" exec="nodelet" name="pcl_manager_$(var sensor_id)" args="manager" output="screen"/>
 
   <node pkg="nodelet" exec="nodelet" name="pass_through_z_velo_$(var sensor_id)" args="load pcl/PassThrough pcl_manager_$(var sensor_id)" output="screen">
     <remap from="~input" to="$(var cloud_topic)" />
@@ -40,15 +40,15 @@
       filter_limit_negative: False
       max_queue_size: 1
     </rosparam>
-  </node> -->
+  </node>
 
-  <!-- <node pkg="calibration" exec="lidar_pattern" name="lidar_pattern_$(var sensor_id)" output="screen">
+  <node pkg="calibration" exec="lidar_pattern" name="lidar_pattern_$(var sensor_id)" output="screen">
     <remap from="~cloud1" to="/lidar_pattern_$(var sensor_id)/zyx_filtered"/>
     <rosparam>
       passthrough_radius_min: 1.0
       passthrough_radius_max: 6.0
     </rosparam>
-  </node> -->
+  </node>
 
   <node pkg="calibration" exec="lidar_pattern" name="lidar_pattern_$(var sensor_id)" output="screen">
     <remap from="cloud1" to="$(var cloud_topic)"/>

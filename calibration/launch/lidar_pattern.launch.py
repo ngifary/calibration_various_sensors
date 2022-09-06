@@ -17,7 +17,7 @@ def generate_launch_description():
 
     # args that can be set from the command line or a default will be used
     cloud_topic_launch_arg = DeclareLaunchArgument(
-        'cloud_topic', default_value='laser_points'
+        'cloud_topic', default_value='/sick_mrs6124/sick_points'
     )
     sensor_id_launch_arg = DeclareLaunchArgument(
         "sensor_id", default_value='0'
@@ -25,7 +25,7 @@ def generate_launch_description():
 
     """Generate launch description with multiple components."""
     container = ComposableNodeContainer(
-        name='my_container',
+        name=['pcl_manager_', sensor_id],
         namespace='',
         package='rclcpp_components',
         executable='component_container',
