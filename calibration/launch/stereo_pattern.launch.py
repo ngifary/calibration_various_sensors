@@ -81,11 +81,11 @@ def generate_launch_description():
         description='Whether to launch debayer and rectify nodes from image_proc.'
     )
     left_namespace_launch_arg = DeclareLaunchArgument(
-        name='left_namespace', default_value='left',
+        name='left_namespace', default_value='left_image',
         description='Namespace for the left camera'
     )
     right_namespace_launch_arg = DeclareLaunchArgument(
-        name='right_namespace', default_value='right',
+        name='right_namespace', default_value='right_image',
         description='Namespace for the right camera'
     )
     container_launch_arg = DeclareLaunchArgument(
