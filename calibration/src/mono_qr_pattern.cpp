@@ -114,7 +114,7 @@ MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
   string csv_name;
 
   delta_width_circles_ = this->declare_parameter("delta_width_circles", 0.5);
-  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.5);
+  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.4);
   marker_size_ = this->declare_parameter("marker_size", 0.2);
   delta_width_qr_center_ = this->declare_parameter("delta_width_qr_center", 0.55);
   delta_height_qr_center_ = this->declare_parameter("delta_height_qr_center", 0.35);

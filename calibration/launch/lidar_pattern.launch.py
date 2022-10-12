@@ -58,8 +58,8 @@ def generate_launch_description():
                     ],
                     parameters=[{
                         'filter_field_name': 'y',
-                        'filter_limit_min': -100.0,
-                        'filter_limit_max': 100.0,
+                        'filter_limit_min': -0.0,
+                        'filter_limit_max': 0.5,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                     }]),
@@ -76,7 +76,7 @@ def generate_launch_description():
                     parameters=[{
                         'filter_field_name': 'x',
                         'filter_limit_min': 0.0,
-                        'filter_limit_max': 100.0,
+                        'filter_limit_max': 1.5,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                     }]),
@@ -94,7 +94,10 @@ def generate_launch_description():
         ],
         parameters=[{
             'passthrough_radius_min': 1.0,
-            'passthrough_radius_max': 6.0
+            'passthrough_radius_max': 6.0,
+            'circle_radius' : 0.06,
+            'delta_width_circles' : 0.09,
+            'delta_height_circles' : 0.14
         }]
     )
 

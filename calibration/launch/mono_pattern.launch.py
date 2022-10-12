@@ -15,6 +15,7 @@ def generate_launch_description():
     stdout = LaunchConfiguration('stdout')
     camera_name = LaunchConfiguration('camera_name')
     image_topic = LaunchConfiguration('image_topic')
+    camera_topic = LaunchConfiguration('camera_topic')
     frame_name = LaunchConfiguration('frame_name')
     sensor_id = LaunchConfiguration('sensor_id')
 
@@ -28,6 +29,9 @@ def generate_launch_description():
     image_topic_launch_arg = DeclareLaunchArgument(
         'image_topic', default_value='image_raw'
     )
+    camera_topic_launch_arg = DeclareLaunchArgument(
+        'camera_topic', default_value='camera_info'
+    )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'
     )
@@ -35,7 +39,7 @@ def generate_launch_description():
         'sensor_id', default_value='0'
     )
     
-    marker_size = 0.2
+    marker_size = 0.05
 
     mono_qr_pattern_node = Node(
         package='calibration',
@@ -47,8 +51,12 @@ def generate_launch_description():
         ],
         parameters=[{
             'image_topic': image_topic,
-            'cinfo_topic': 'camera_info',
-            'marker_size': marker_size
+            'cinfo_topic': camera_topic,
+            'marker_size': marker_size,
+            'delta_width_qr_center' : 0.155,
+            'delta_height_qr_center' : 0.080,
+            'delta_width_circles' : 0.09,
+            'delta_height_circles' : 0.14
         }]
     )
 
