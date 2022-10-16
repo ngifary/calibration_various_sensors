@@ -104,7 +104,8 @@ def generate_launch_description():
             'passthrough_radius_max': 6.0,
             'circle_radius': 0.06,
             'delta_width_circles': 0.09,
-            'delta_height_circles': 0.14
+            'delta_height_circles': 0.14,
+            'save_to_file': True
         }],
         output=stdout
     )

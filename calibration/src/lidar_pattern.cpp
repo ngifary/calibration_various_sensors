@@ -126,11 +126,6 @@ void LidarPattern::initializeParams()
   desc.description = "distance from top circles centre to bottom circles centre (m)";
   delta_height_circles_ = declare_parameter(desc.name, 0.4);
 
-  desc.name = "delta_height_circles_";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "distance from top circles centre to bottom circles centre (m)";
-  delta_height_circles_ = declare_parameter(desc.name, 0.4);
-
   desc.name = "plane_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";

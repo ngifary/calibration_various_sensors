@@ -601,7 +601,10 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
   if (DEBUG)
   {
     cv::namedWindow("out", cv::WINDOW_NORMAL);
-    cv::imshow("out", imageCopy);
+    cv::Mat imageCopy_resize;
+    cv::Size size(1024, 750);
+    cv::resize(imageCopy, imageCopy_resize, size);
+    cv::imshow("out", imageCopy_resize);
     cv::waitKey(1);
   }
 

@@ -34,7 +34,8 @@ def generate_launch_description():
     #region Configurable
 
     approximate_sync = LaunchConfiguration('approximate_sync')
-    avoid_point_cloud_padding = LaunchConfiguration('avoid_point_cloud_padding')
+    avoid_point_cloud_padding = LaunchConfiguration(
+        'avoid_point_cloud_padding')
     use_color = LaunchConfiguration('use_color')
     use_system_default_qos = LaunchConfiguration('use_system_default_qos')
     launch_image_proc = LaunchConfiguration('launch_image_proc')
@@ -169,9 +170,12 @@ def generate_launch_description():
                     name='left_rectify_mono_node',
                     # Remap subscribers and publishers
                     remappings=[
-                        ('image', [camera_name, '/', left_namespace, '/image_raw']),
-                        ('camera_info', [camera_name, '/', left_namespace, '/camera_info']),
-                        ('image_rect', [camera_name, '/', left_namespace, '/image_rect'])
+                        ('image', [camera_name, '/',
+                         left_namespace, '/image_raw']),
+                        ('camera_info', [camera_name, '/',
+                         left_namespace, '/camera_info']),
+                        ('image_rect', [camera_name, '/',
+                         left_namespace, '/image_rect'])
                     ]),
                 ComposableNode(
                     package='image_proc',
@@ -179,9 +183,12 @@ def generate_launch_description():
                     name='right_rectify_mono_node',
                     # Remap subscribers and publishers
                     remappings=[
-                        ('image', [camera_name, '/', right_namespace, '/image_raw']),
-                        ('camera_info', [camera_name, '/', right_namespace, '/camera_info']),
-                        ('image_rect', [camera_name, '/', right_namespace, '/image_rect'])
+                        ('image', [camera_name, '/',
+                         right_namespace, '/image_raw']),
+                        ('camera_info', [camera_name, '/',
+                         right_namespace, '/camera_info']),
+                        ('image_rect', [camera_name, '/',
+                         right_namespace, '/image_rect'])
                     ])
         ],
         output=stdout,
@@ -218,10 +225,14 @@ def generate_launch_description():
                         'full_dp': full_dp
                     }],
                     remappings=[
-                        ('left/image_rect', [camera_name, '/', left_namespace, '/image_rect']),
-                        ('left/camera_info', [camera_name, '/', left_namespace, '/camera_info']),
-                        ('right/image_rect', [camera_name, '/', right_namespace, '/image_rect']),
-                        ('right/camera_info', [camera_name, '/', right_namespace, '/camera_info'])
+                        ('left/image_rect',
+                         [camera_name, '/', left_namespace, '/image_rect']),
+                        ('left/camera_info',
+                         [camera_name, '/', left_namespace, '/camera_info']),
+                        ('right/image_rect',
+                         [camera_name, '/', right_namespace, '/image_rect']),
+                        ('right/camera_info',
+                         [camera_name, '/', right_namespace, '/camera_info'])
                     ]),
                 ComposableNode(
                     package='stereo_image_proc',
@@ -234,9 +245,12 @@ def generate_launch_description():
                         'use_system_default_qos': use_system_default_qos
                     }],
                     remappings=[
-                        ('left/camera_info', [camera_name, '/', left_namespace, '/camera_info']),
-                        ('right/camera_info', [camera_name, '/', right_namespace, '/camera_info']),
-                        ('left/image_rect_color', [camera_name, '/', left_namespace, '/image_rect'])
+                        ('left/camera_info',
+                         [camera_name, '/', left_namespace, '/camera_info']),
+                        ('right/camera_info',
+                         [camera_name, '/', right_namespace, '/camera_info']),
+                        ('left/image_rect_color',
+                         [camera_name, '/', left_namespace, '/image_rect'])
                     ])
         ],
         output=stdout
@@ -284,9 +298,12 @@ def generate_launch_description():
                         'use_system_default_qos': LaunchConfiguration('use_system_default_qos')
                     }],
                     remappings=[
-                        ('left/camera_info', ['stereo_camera_info', '/left_info']),
-                        ('right/camera_info', ['stereo_camera_info', '/right_info']),
-                        ('left/image_rect_color', [left_namespace, '/image_rect_color'])
+                        ('left/camera_info',
+                         ['stereo_camera_info', '/left_info']),
+                        ('right/camera_info',
+                         ['stereo_camera_info', '/right_info']),
+                        ('left/image_rect_color',
+                         [left_namespace, '/image_rect_color'])
                     ])
         ],
         output=stdout
@@ -324,7 +341,7 @@ def generate_launch_description():
                         ('output', 'z_filtered_cloud')
                     ],
                     parameters=[{
-                        
+
                         'filter_field_name': 'z',
                         'filter_limit_min': 0.8,
                         'filter_limit_max': 3,
@@ -386,10 +403,11 @@ def generate_launch_description():
     )
 
     tf2_node = Node(
-        package='tf2',
+        package='tf2_ros',
         executable='static_transform_publisher',
         name='stereo_ros_tf',
-        arguments=['0', '0', '0', '-1.57079632679', '0', '-1.57079632679', 'rotated_', frame_name, frame_name, '100']
+        arguments=['0', '0', '0', '-1.57079632679', '0',
+                   '-1.57079632679', ['rotated_', frame_name], frame_name, '100']
     )
 
     return LaunchDescription([
@@ -429,5 +447,5 @@ def generate_launch_description():
         # stereo_pcl_container,
         # v2c_plane_segmentation_node,
         # stereo_pattern_node,
-        # tf2_node
+        tf2_node
     ])

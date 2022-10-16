@@ -38,7 +38,7 @@ def generate_launch_description():
     sensor_id_launch_arg = DeclareLaunchArgument(
         'sensor_id', default_value='0'
     )
-    
+
     marker_size = 0.2
 
     mono_qr_pattern_node = Node(
@@ -47,16 +47,18 @@ def generate_launch_description():
         name=['mono_qr_pattern_', sensor_id],
         namespace=camera_name,
         remappings=[
-            ('centers_cloud', ['mono_qr_pattern_', sensor_id, '/centers_cloud'])
+            ('centers_cloud', ['mono_qr_pattern_',
+             sensor_id, '/centers_cloud'])
         ],
         parameters=[{
             'image_topic': image_topic,
             'cinfo_topic': camera_topic,
             'marker_size': marker_size,
-            'delta_width_qr_center' : 0.55,
-            'delta_height_qr_center' : 0.35,
-            'delta_width_circles' : 0.5,
-            'delta_height_circles' : 0.4
+            'delta_width_qr_center': 0.55,
+            'delta_height_qr_center': 0.35,
+            'delta_width_circles': 0.5,
+            'delta_height_circles': 0.4,
+            'save_to_file': True
         }],
         output=stdout
     )
@@ -64,8 +66,9 @@ def generate_launch_description():
     tf2_node = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='stereo_ros_tf',
-        arguments=['0', '0', '0', '-1.57079632679', '0', '-1.57079632679', 'rotated_', frame_name, frame_name, '100']
+        name=['camera_ros_tf_', sensor_id],
+        arguments=['0', '0', '0', '-1.57079632679', '0',
+                   '-1.57079632679', ['rotated_', frame_name], frame_name]
     )
 
     return LaunchDescription([
@@ -76,5 +79,5 @@ def generate_launch_description():
         frame_name_launch_arg,
         sensor_id_launch_arg,
         mono_qr_pattern_node,
-        # tf2_node
+        tf2_node
     ])

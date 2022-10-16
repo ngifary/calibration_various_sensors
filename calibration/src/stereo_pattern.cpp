@@ -2,82 +2,7 @@
   stereo_pattern: Find the circle centers in the stereo cloud
 */
 
-#define TARGET_NUM_CIRCLES 4
-
-// #include "dynamic_reconfigure/server.h"
-#include "message_filters/subscriber.h"
-#include "message_filters/sync_policies/exact_time.h"
-#include "pcl/common/transforms.h"
-#include "pcl/filters/extract_indices.h"
-#include "pcl/sample_consensus/sac_model_plane.h"
-#include "pcl/segmentation/sac_segmentation.h"
-#include "pcl_conversions/pcl_conversions.hpp"
-// #include <pcl_msgs/ModelCoefficients.h>
-#include "pcl_msgs/msg/model_coefficients.hpp"
-// #include <pcl_msgs/PointIndices.h>
-#include "pcl_msgs/msg/point_indices.hpp"
-// #include <ros/ros.h>
-#include "rclcpp/rclcpp.hpp"
-// #include <sensor_msgs/PointCloud2.h>
-#include "sensor_msgs/msg/point_cloud2.hpp"
-// #include <std_msgs/Empty.h>
-#include "std_msgs/msg/empty.hpp"
-// #include <laser2cam_calibration/StereoConfig.h>
-// #include <laser2cam_calibration/ClusterCentroids.h>
-#include "calibration_interfaces/msg/cluster_centroids.hpp"
-#include "laser2cam_utils.h"
-
-using namespace std;
-using namespace sensor_msgs;
-namespace sync_policies = message_filters::sync_policies;
-
-class StereoPattern : public rclcpp::Node
-{
-public:
-  StereoPattern();
-  ~StereoPattern();
-
-private:
-  /* data */
-  void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
-                const pcl_msgs::msg::ModelCoefficients::ConstSharedPtr cam_plane_coeffs);
-  rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
-  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
-
-  int images_proc_ = 0, images_used_ = 0;
-
-  double delta_width_circles_, delta_height_circles_;
-  double circle_threshold_;
-  double plane_distance_inliers_;
-  double target_radius_tolerance_;
-  double cluster_tolerance_;
-  double min_cluster_factor_;
-  unsigned min_centers_found_;
-  bool WARMUP_DONE = false;
-  bool skip_warmup_;
-  bool save_to_file_;
-  std::ofstream savefile;
-
-  // Pubs Definition
-  rclcpp::Publisher<pcl_msgs::msg::PointIndices>::SharedPtr inliers_pub;
-  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr plane_edges_pub, xy_pattern_pub, cumulative_pub;
-  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr final_pub;
-
-  //Subs Definition
-  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> camera_cloud_sub_;
-  message_filters::Subscriber<pcl_msgs::msg::ModelCoefficients> cam_plane_coeffs_sub_;
-  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
-
-  /** \brief Synchronized image and camera info.*/
-  std::shared_ptr<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>> sync_;
-  /** \brief The maximum queue size (default: 3). */
-  int max_queue_size_ = 3;
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
-
-  std_msgs::msg::Header header_;
-};
+#include "stereo_pattern.hpp"
 
 StereoPattern::StereoPattern() : Node("stereo_pattern")
 {
@@ -101,26 +26,16 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
 
   cumulative_cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
-  sync_ = std::make_shared<message_filters::Synchronizer<sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>>(max_queue_size_);
+  sync_ = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>>(max_queue_size_);
 
   sync_->connectInput(camera_cloud_sub_, cam_plane_coeffs_sub_);
 
   sync_->registerCallback(std::bind(&StereoPattern::callback, this, std::placeholders::_1, std::placeholders::_2));
 
-  string csv_name;
+  std::string csv_name;
 
-  // Dynamic Parameters
-  circle_threshold_ = this->declare_parameter("circle_threshold", 0);
-  // Non-Dynamic Parameters
-  delta_width_circles_ = this->declare_parameter("delta_width_circles", 0.5);
-  delta_height_circles_ = this->declare_parameter("delta_height_circles", 0.4);
-  plane_distance_inliers_ = this->declare_parameter("plane_distance_inliers", 0.1);
-  target_radius_tolerance_ = this->declare_parameter("target_radius_tolerance", 0.01);
-  min_centers_found_ = this->declare_parameter("min_centers_found", TARGET_NUM_CIRCLES);
-  cluster_tolerance_ = this->declare_parameter("cluster_tolerance", 0.05);
-  min_cluster_factor_ = this->declare_parameter("min_cluster_factor", 0.5);
-  skip_warmup_ = this->declare_parameter("skip_warmup", false);
-  save_to_file_ = this->declare_parameter("save_to_file", false);
+  initializeParams();
+
   csv_name = this->declare_parameter("csv_name", "stereo_pattern_" + currentDateTime() + ".csv");
 
   // ROS param callback
@@ -138,7 +53,7 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
   // Just for statistics
   if (save_to_file_)
   {
-    ostringstream os;
+    std::ostringstream os;
     os << getenv("HOME") << "/v2c_experiments/" << csv_name;
     if (save_to_file_)
     {
@@ -149,7 +64,7 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
                   "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
                   "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
                   "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << endl;
+               << std::endl;
     }
   }
 }
@@ -157,6 +72,61 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
 StereoPattern::~StereoPattern()
 {
   RCLCPP_INFO(this->get_logger(), "[Stereo] Terminating....");
+}
+
+void StereoPattern::initializeParams()
+{
+  rcl_interfaces::msg::ParameterDescriptor desc;
+
+  desc.name = "delta_width_circles";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "distance from left circles centre to right circles centre (m)";
+  delta_width_circles_ = declare_parameter(desc.name, 0.5);
+
+  desc.name = "delta_height_circles_";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "distance from top circles centre to bottom circles centre (m)";
+  delta_height_circles_ = declare_parameter(desc.name, 0.4);
+
+  desc.name = "plane_distance_inliers";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "";
+  plane_distance_inliers_ = declare_parameter(desc.name, 0.1);
+
+  desc.name = "circle_threshold";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "";
+  circle_threshold_ = declare_parameter(desc.name, 0.05);
+
+  desc.name = "target_radius_tolerance";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "";
+  target_radius_tolerance_ = declare_parameter(desc.name, 0.1);
+
+  desc.name = "min_centers_found";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
+  desc.description = "minimum circle to be detected (-)";
+  min_centers_found_ = declare_parameter(desc.name, TARGET_NUM_CIRCLES);
+
+  desc.name = "cluster_tolerance";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "maximal distance to still be included in a cluster (m)";
+  cluster_tolerance_ = declare_parameter(desc.name, 0.05);
+
+  desc.name = "min_cluster_factor";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "minimum cluster size to frame ratio (-)";
+  min_cluster_factor_ = declare_parameter(desc.name, 0.5);
+
+  desc.name = "skip_warmup";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  desc.description = "skip warmup";
+  skip_warmup_ = declare_parameter(desc.name, false);
+
+  desc.name = "save_to_file";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  desc.description = "save result to a file";
+  save_to_file_ = declare_parameter(desc.name, false);
 }
 
 void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
@@ -499,7 +469,7 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
 
   if (save_to_file_)
   {
-    savefile << endl;
+    savefile << std::endl;
   }
 
   // Clear cumulative cloud during warm-up phase
