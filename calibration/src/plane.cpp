@@ -1,25 +1,4 @@
 /*
-  velo2cam_calibration - Automatic calibration algorithm for extrinsic
-  parameters of a stereo camera and a velodyne Copyright (C) 2017-2021 Jorge
-  Beltran, Carlos Guindel
-
-  This file is part of velo2cam_calibration.
-
-  velo2cam_calibration is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 2 of the License, or
-  (at your option) any later version.
-
-  velo2cam_calibration is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with velo2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-/*
   plane: Find a plane model in the cloud using RANSAC
 */
 
@@ -39,7 +18,7 @@
 // #include <sensor_msgs/PointCloud2.h>
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/msg/point_cloud2.h"
-// #include "velo2cam_calibration/PlaneConfig.h"
+// #include "laser2cam_calibration/PlaneConfig.h"
 
 class SACSegmentator : public rclcpp::Node
 {
@@ -158,7 +137,7 @@ public:
   }
   return result;
 }
-  // void param_callback(velo2cam_calibration::PlaneConfig &config,
+  // void param_callback(laser2cam_calibration::PlaneConfig &config,
   //                     uint32_t level)
   // {
   //   threshold_ = config.threshold;
@@ -177,8 +156,8 @@ private:
   Eigen::Vector3f Axis;
 
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr ret;
-  // dynamic_reconfigure::Server<velo2cam_calibration::PlaneConfig> server;
-  // dynamic_reconfigure::Server<velo2cam_calibration::PlaneConfig>::CallbackType
+  // dynamic_reconfigure::Server<laser2cam_calibration::PlaneConfig> server;
+  // dynamic_reconfigure::Server<laser2cam_calibration::PlaneConfig>::CallbackType
   //     f;
   double threshold_;
 };

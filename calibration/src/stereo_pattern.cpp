@@ -1,25 +1,4 @@
 /*
-  velo2cam_calibration - Automatic calibration algorithm for extrinsic
-  parameters of a stereo camera and a velodyne Copyright (C) 2017-2021 Jorge
-  Beltran, Carlos Guindel
-
-  This file is part of velo2cam_calibration.
-
-  velo2cam_calibration is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 2 of the License, or
-  (at your option) any later version.
-
-  velo2cam_calibration is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with velo2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-/*
   stereo_pattern: Find the circle centers in the stereo cloud
 */
 
@@ -43,10 +22,10 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 // #include <std_msgs/Empty.h>
 #include "std_msgs/msg/empty.hpp"
-// #include <velo2cam_calibration/StereoConfig.h>
-// #include <velo2cam_calibration/ClusterCentroids.h>
+// #include <laser2cam_calibration/StereoConfig.h>
+// #include <laser2cam_calibration/ClusterCentroids.h>
 #include "calibration_interfaces/msg/cluster_centroids.hpp"
-#include "velo2cam_utils.h"
+#include "laser2cam_utils.h"
 
 using namespace std;
 using namespace sensor_msgs;

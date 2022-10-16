@@ -1,30 +1,9 @@
 /*
-  velo2cam_calibration - Automatic calibration algorithm for extrinsic
-  parameters of a stereo camera and a velodyne Copyright (C) 2017-2021 Jorge
-  Beltran, Carlos Guindel
-
-  This file is part of velo2cam_calibration.
-
-  velo2cam_calibration is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 2 of the License, or
-  (at your option) any later version.
-
-  velo2cam_calibration is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with velo2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
+  laser2cam_utils: Helper functions
 */
 
-/*
-  velo2cam_utils: Helper functions
-*/
-
-#ifndef velo2cam_utils_H
-#define velo2cam_utils_H
+#ifndef laser2cam_utils_H
+#define laser2cam_utils_H
 
 #define PCL_NO_PRECOMPILE
 #define DEBUG 0
@@ -36,20 +15,18 @@
 #define TARGET_RADIUS 0.12
 #define GEOMETRY_TOLERANCE 0.06
 
-using namespace std;
-
-namespace Velodyne
+namespace LaserScanner
 {
   struct Point
   {
-    PCL_ADD_POINT4D;    // quad-word XYZ
-    float intensity;    ///< laser intensity reading
-    std::uint16_t ring; ///< laser ring number
+    PCL_ADD_POINT4D;       // quad-word XYZ
+    float intensity;       ///< laser intensity reading
+    std::uint16_t channel; ///< laser channel number
     float range;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW // ensure proper alignment
   } EIGEN_ALIGN16;
 
-  void addRange(pcl::PointCloud<Velodyne::Point> &pc)
+  void addRange(pcl::PointCloud<LaserScanner::Point> &pc)
   {
     for (pcl::PointCloud<Point>::iterator pt = pc.points.begin();
          pt < pc.points.end(); pt++)
@@ -58,16 +35,16 @@ namespace Velodyne
     }
   }
 
-  vector<vector<Point *>> getRings(pcl::PointCloud<Velodyne::Point> &pc,
-                                   int rings_count)
+  std::vector<std::vector<Point *>> getChannels(pcl::PointCloud<LaserScanner::Point> &pc,
+                                                int channels_count)
   {
-    vector<vector<Point *>> rings(rings_count);
+    std::vector<std::vector<Point *>> channels(channels_count);
     for (pcl::PointCloud<Point>::iterator pt = pc.points.begin();
          pt < pc.points.end(); pt++)
     {
-      rings[pt->ring].push_back(&(*pt));
+      channels[pt->channel].push_back(&(*pt));
     }
-    return rings;
+    return channels;
   }
 
   // all intensities to range min-max
@@ -79,8 +56,8 @@ namespace Velodyne
     for (pcl::PointCloud<Point>::iterator pt = pc.points.begin();
          pt < pc.points.end(); pt++)
     {
-      max_found = max(max_found, pt->intensity);
-      min_found = min(min_found, pt->intensity);
+      max_found = std::max(max_found, pt->intensity);
+      min_found = std::min(min_found, pt->intensity);
     }
 
     for (pcl::PointCloud<Point>::iterator pt = pc.points.begin();
@@ -91,16 +68,16 @@ namespace Velodyne
           minv;
     }
   }
-} // namespace Velodyne
+} // namespace LaserScanner
 
-POINT_CLOUD_REGISTER_POINT_STRUCT(Velodyne::Point,
+POINT_CLOUD_REGISTER_POINT_STRUCT(LaserScanner::Point,
                                   (float, x, x)(float, y, y)(float, z, z)(
                                       float, intensity,
-                                      intensity)(std::uint16_t, ring,
-                                                 ring)(float, range, range))
+                                      intensity)(std::uint16_t, channel,
+                                                 channel)(float, range, range))
 
 void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
-                        vector<pcl::PointXYZ> &v)
+                        std::vector<pcl::PointXYZ> &v)
 {
   // 0 -- 1
   // |    |
@@ -134,7 +111,7 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   }
 
   // Compute distances from top-most center to rest of points
-  vector<double> distances;
+  std::vector<double> distances;
   for (int i = 0; i < 4; i++)
   {
     pcl::PointXYZ pt = pc->points[i];
@@ -240,14 +217,14 @@ void getCenterClusters(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in,
   euclidean_cluster.extract(cluster_indices);
 
   if (DEBUG && verbosity)
-    cout << cluster_indices.size() << " clusters found from "
-         << cloud_in->points.size() << " points in cloud" << endl;
+    std::cout << cluster_indices.size() << " clusters found from "
+              << cloud_in->points.size() << " points in cloud" << std::endl;
 
   for (std::vector<pcl::PointIndices>::iterator it = cluster_indices.begin();
        it < cluster_indices.end(); it++)
   {
     float accx = 0., accy = 0., accz = 0.;
-    for (vector<int>::iterator it2 = it->indices.begin();
+    for (std::vector<int>::iterator it2 = it->indices.begin();
          it2 < it->indices.end(); it2++)
     {
       accx += cloud_in->at(*it2).x;
@@ -272,7 +249,7 @@ Eigen::Affine3f getRotationMatrix(Eigen::Vector3f source,
                                        pow(source[2], 2)));
 
   if (DEBUG)
-    cout << "Rot. vector: " << rotation_vector << " / Angle: " << theta << endl;
+    std::cout << "Rot. vector: " << rotation_vector << " / Angle: " << theta << std::endl;
 
   Eigen::Matrix3f rotation =
       Eigen::AngleAxis<float>(theta, rotation_vector) * Eigen::Scaling(1.0f);
@@ -397,8 +374,8 @@ void comb(int N, int K, std::vector<std::vector<int>> &groups)
   unsigned n_permutations = upper_factorial / lower_factorial;
 
   if (DEBUG)
-    cout << N << " centers found. Iterating over " << n_permutations
-         << " possible sets of candidates" << endl;
+    std::cout << N << " centers found. Iterating over " << n_permutations
+              << " possible sets of candidates" << std::endl;
 
   std::string bitmask(K, 1); // K leading 1's
   bitmask.resize(N, 0);      // N-K trailing 0's

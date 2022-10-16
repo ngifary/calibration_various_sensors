@@ -1,161 +1,12 @@
 /*
-  laser2cam_calibration - Automatic calibration algorithm for extrinsic
-  parameters of a stereo camera and a velodyne Copyright (C) 2017-2021 Jorge
-  Beltran, Carlos Guindel
-
-  This file is part of laser2cam_calibration.
-
-  laser2cam_calibration is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 2 of the License, or
-  (at your option) any later version.
-
-  laser2cam_calibration is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with laser2cam_calibration.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-/*
   laser2cam_calibration: Perform the registration step
 */
 
-#include "ament_index_cpp/get_package_share_directory.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "geometry_msgs/msg/twist.hpp"
-#include "pcl/registration/transformation_estimation_svd.h"
-#include "pcl_conversions/pcl_conversions.hpp"
-#include "pcl_ros/transforms.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "std_srvs/srv/empty.hpp"
-#include "std_msgs/msg/empty.hpp"
-#include "std_msgs/msg/int32.hpp"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "tf2/convert.h"
-#include "tf2_ros/transform_broadcaster.h"
-#include "tf2_ros/static_transform_broadcaster.h"
-#include "tf2_ros/transform_listener.h"
-#include "tf2_ros/buffer.h"
-#include "tf2/transform_datatypes.h"
-#include "tinyxml2.h"
-#include "velo2cam_utils.h"
-#include "opencv2/opencv.hpp"
-#include "calibration_interfaces/msg/cluster_centroids.hpp"
-
-#include <chrono>
-#include <functional>
-#include <memory>
-#include <string>
-#include <cinttypes>
-#include <limits>
-#include <utility>
-#include <vector>
-
-#include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
-
-using namespace sensor_msgs;
-using namespace std::chrono_literals;
-
-/* This example creates a subclass of Node and uses std::bind() to register a
- * member function as a callback from the timer. */
-
-class Registration : public rclcpp::Node
-{
-public:
-    typedef Eigen::Matrix<double, 12, 12> Matrix12d;
-    typedef Eigen::Matrix<double, 12, 1> Vector12d;
-
-    Registration(const rclcpp::NodeOptions &options);
-    ~Registration();
-
-    bool isFinished()
-    {
-        return calibration_ended;
-    }
-
-private:
-    void calibrateExtrinsics(int seek_iter);
-    void sensor1_callback(const calibration_interfaces::msg::ClusterCentroids::ConstSharedPtr sensor1_centroids);
-    void sensor2_callback(const calibration_interfaces::msg::ClusterCentroids::ConstSharedPtr sensor2_centroids);
-    /**
-     * \brief Force immediate unsubscription of this subscriber from its topic
-     */
-    void unsubscribe()
-    {
-        sensor1_sub.reset();
-        sensor2_sub.reset();
-    }
-
-    // Pubs Declaration
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clusters_sensor2_pub, clusters_sensor1_pub;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colour_sensor2_pub, colour_sensor1_pub;
-    rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr sensor_switch_pub;
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr iterations_pub;
-
-    // Subs Declaration
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
-    rclcpp::Subscription<calibration_interfaces::msg::ClusterCentroids>::SharedPtr sensor1_sub;
-    rclcpp::Subscription<calibration_interfaces::msg::ClusterCentroids>::SharedPtr sensor2_sub;
-
-    // Sensor 1 Declaration
-    bool sensor1Received, sensor2Received;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud, sensor2_cloud;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr isensor1_cloud, isensor2_cloud;
-
-    /** \brief TF listener object. */
-    tf2_ros::Buffer tf_buffer_;
-    tf2_ros::TransformListener tf_listener_;
-
-    int nFrames;
-
-    std::vector<pcl::PointXYZ> sensor1_vector{4}, sensor2_vector{4};
-
-    geometry_msgs::msg::TransformStamped tf_sensor1_sensor2;
-    tf2::Stamped<tf2::Transform> tf2_sensor1_s2;
-
-    string sensor1_frame_id = "";
-    string sensor1_rotated_frame_id = "";
-    string sensor2_frame_id = "";
-    string sensor2_rotated_frame_id = "";
-
-    tf2::Transform transf;
-
-    std::vector<std::vector<std::tuple<int, int, pcl::PointCloud<pcl::PointXYZ>,
-                                       std::vector<pcl::PointXYZ>>>>
-        sensor1_buffer;
-    std::vector<std::vector<std::tuple<int, int, pcl::PointCloud<pcl::PointXYZ>,
-                                       std::vector<pcl::PointXYZ>>>>
-        sensor2_buffer;
-
-    long int sensor1_count, sensor2_count;
-
-    std::ofstream savefile;
-
-    // Internal State Definistion
-    bool calibration_ended;
-
-    int S1_WARMUP_COUNT = 0, S2_WARMUP_COUNT = 0;
-    bool S1_WARMUP_DONE = false, S2_WARMUP_DONE = false;
-    unsigned TARGET_POSITIONS_COUNT = 0;
-    int TARGET_ITERATIONS = 30;
-
-    // Node Parameters Declaration
-    string csv_name;
-    bool sync_iterations;
-    bool save_to_file_;
-    bool publish_tf_;
-    bool is_sensor1_cam, is_sensor2_cam;
-    bool skip_warmup, single_pose_mode;
-    bool results_every_pose;
-};
+#include "laser2cam_calibration.hpp"
 
 Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("registration", options),
-                               tf_buffer_(this->get_clock()),
-                               tf_listener_(tf_buffer_)
+                                                                                         tf_buffer_(this->get_clock()),
+                                                                                         tf_listener_(tf_buffer_)
 {
     RCLCPP_INFO(this->get_logger(), "Calibration Starting....");
     std::cout << "It's here!-1";
@@ -211,7 +62,7 @@ Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
     // Saving results to file
     if (save_to_file_)
     {
-        ostringstream os;
+        std::ostringstream os;
         os << getenv("HOME") << "/v2c_experiments/" << csv_name;
         if (save_to_file_)
         {
@@ -220,7 +71,7 @@ Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
             savefile.open(os.str().c_str());
             savefile << "it, x, y, z, r, p, y, used_sen1, used_sen2, total_sen1, "
                         "total_sen2"
-                     << endl;
+                     << std::endl;
         }
     }
 
@@ -233,9 +84,9 @@ Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
     }
     else
     {
-        cout << "Please, adjust the filters for each sensor before the calibration "
-                "starts."
-             << endl;
+        std::cout << "Please, adjust the filters for each sensor before the calibration "
+                     "starts."
+                  << std::endl;
     }
 }
 
@@ -271,12 +122,12 @@ Registration::~Registration()
 
     std::string path = ament_index_cpp::get_package_share_directory("calibration");
 
-    string backuppath = path + "/launch/calibrated_tf_" + str + ".launch";
+    std::string backuppath = path + "/launch/calibrated_tf_" + str + ".launch";
     path = path + "/launch/calibrated_tf.launch";
 
-    cout << endl
-         << "Creating .launch file with calibrated TF in: " << endl
-         << path.c_str() << endl;
+    std::cout << std::endl
+              << "Creating .launch file with calibrated TF in: " << std::endl
+              << path.c_str() << std::endl;
     // Create .launch file with calibrated TF
 
     tinyxml2::XMLDocument doc;
@@ -291,7 +142,7 @@ Registration::~Registration()
     arg->SetAttribute("default", "screen");
     root->LinkEndChild(arg);
 
-    string sensor2_final_transformation_frame = sensor2_frame_id;
+    std::string sensor2_final_transformation_frame = sensor2_frame_id;
     if (is_sensor2_cam)
     {
         sensor2_final_transformation_frame = sensor2_rotated_frame_id;
@@ -299,7 +150,7 @@ Registration::~Registration()
         sensor2_rot_stream_pub << "0 0 0 -1.57079632679 0 -1.57079632679 "
                                << sensor2_rotated_frame_id << " "
                                << sensor2_frame_id << " 10";
-        string sensor2_rotation = sensor2_rot_stream_pub.str();
+        std::string sensor2_rotation = sensor2_rot_stream_pub.str();
 
         tinyxml2::XMLElement *sensor2_rotation_node = doc.NewElement("node");
         sensor2_rotation_node->SetAttribute("pkg", "tf");
@@ -309,7 +160,7 @@ Registration::~Registration()
         root->LinkEndChild(sensor2_rotation_node);
     }
 
-    string sensor1_final_transformation_frame = sensor1_frame_id;
+    std::string sensor1_final_transformation_frame = sensor1_frame_id;
     if (is_sensor1_cam)
     {
         sensor1_final_transformation_frame = sensor1_rotated_frame_id;
@@ -317,7 +168,7 @@ Registration::~Registration()
         sensor1_rot_stream_pub << "0 0 0 -1.57079632679 0 -1.57079632679 "
                                << sensor1_rotated_frame_id << " "
                                << sensor1_frame_id << " 10";
-        string sensor1_rotation = sensor1_rot_stream_pub.str();
+        std::string sensor1_rotation = sensor1_rot_stream_pub.str();
 
         tinyxml2::XMLElement *sensor1_rotation_node = doc.NewElement("node");
         sensor1_rotation_node->SetAttribute("pkg", "tf");
@@ -331,12 +182,12 @@ Registration::~Registration()
     sstream << xt << " " << yt << " " << zt << " " << yaw << " " << pitch << " "
             << roll << " " << sensor2_final_transformation_frame << " "
             << sensor1_final_transformation_frame << " 100";
-    string tf_args = sstream.str();
+    std::string tf_args = sstream.str();
 
     tinyxml2::XMLElement *node = doc.NewElement("node");
     node->SetAttribute("pkg", "tf");
     node->SetAttribute("type", "static_transform_publisher");
-    node->SetAttribute("name", "velo2cam_tf");
+    node->SetAttribute("name", "laser2cam_tf");
     node->SetAttribute("args", tf_args.c_str());
     root->LinkEndChild(node);
 
@@ -345,7 +196,7 @@ Registration::~Registration()
     doc.SaveFile(backuppath.c_str());
 
     if (DEBUG)
-        cout << "Calibration process finished." << endl;
+        std::cout << "Calibration process finished." << std::endl;
 
     RCLCPP_INFO(this->get_logger(), "Shutting down....");
 }
@@ -361,12 +212,12 @@ void Registration::calibrateExtrinsics(int seek_iter = -1)
     int used_sensor2, used_sensor1;
 
     // Get final frame names for TF broadcaster
-    string sensor1_final_transformation_frame = sensor1_frame_id;
+    std::string sensor1_final_transformation_frame = sensor1_frame_id;
     if (is_sensor1_cam)
     {
         sensor1_final_transformation_frame = sensor1_rotated_frame_id;
     }
-    string sensor2_final_transformation_frame = sensor2_frame_id;
+    std::string sensor2_final_transformation_frame = sensor2_frame_id;
     if (is_sensor2_cam)
     {
         sensor2_final_transformation_frame = sensor2_rotated_frame_id;
@@ -533,14 +384,14 @@ void Registration::calibrateExtrinsics(int seek_iter = -1)
         savefile << seek_iter << ", " << xt << ", " << yt << ", " << zt << ", "
                  << roll << ", " << pitch << ", " << yaw << ", " << used_sensor1
                  << ", " << used_sensor2 << ", " << total_sensor1 << ", "
-                 << total_sensor2 << endl;
+                 << total_sensor2 << std::endl;
     }
 
-    cout << setprecision(4) << std::fixed;
-    cout << "Calibration finished succesfully." << endl;
-    cout << "Extrinsic parameters:" << endl;
-    cout << "x = " << xt << "\ty = " << yt << "\tz = " << zt << endl;
-    cout << "roll = " << roll << "\tpitch = " << pitch << "\tyaw = " << yaw << endl;
+    std::cout << std::setprecision(4) << std::fixed;
+    std::cout << "Calibration finished succesfully." << std::endl;
+    std::cout << "Extrinsic parameters:" << std::endl;
+    std::cout << "x = " << xt << "\ty = " << yt << "\tz = " << zt << std::endl;
+    std::cout << "roll = " << roll << "\tpitch = " << pitch << "\tyaw = " << yaw << std::endl;
 
     sensor1Received = false;
     sensor2Received = false;
@@ -556,32 +407,32 @@ void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCe
         RCLCPP_INFO(this->get_logger(), "Sensor 1.1 callback");
         S1_WARMUP_COUNT++;
         std::cout << "It's here!2";
-        cout << "Clusters from " << sensor1_frame_id << ": " << S1_WARMUP_COUNT
-             << "/10" << '\r' << flush;
+        std::cout << "Clusters from " << sensor1_frame_id << ": " << S1_WARMUP_COUNT
+                  << "/10" << '\r' << std::flush;
         if (S1_WARMUP_COUNT >= 10) // TODO: Change to param?
         {
-            cout << endl;
+            std::cout << std::endl;
             sensor1_sub.reset();
             sensor2_sub.reset();
 
-            cout << "Clusters from " << sensor1_frame_id
-                 << " received. Is the warmup done? [Y/n]" << endl;
-            string answer;
+            std::cout << "Clusters from " << sensor1_frame_id
+                      << " received. Is the warmup done? [Y/n]" << std::endl;
+            std::string answer;
             answer.clear();
-            getline(cin, answer);
+            std::getline(std::cin, answer);
             if (answer == "y" || answer == "Y" || answer == "")
             {
                 S1_WARMUP_DONE = !S1_WARMUP_DONE;
 
                 if (!S2_WARMUP_DONE)
                 {
-                    cout << "Filters for sensor 1 are adjusted now. Please, proceed with "
-                            "the other sensor."
-                         << endl;
+                    std::cout << "Filters for sensor 1 are adjusted now. Please, proceed with "
+                                 "the other sensor."
+                              << std::endl;
                 }
                 else
                 { // Both sensors adjusted
-                    cout << "Warmup phase completed. Starting calibration phase." << endl;
+                    std::cout << "Warmup phase completed. Starting calibration phase." << std::endl;
                     std_msgs::msg::Empty myMsg;
                     sensor_switch_pub->publish(myMsg); //
                 }
@@ -676,12 +527,12 @@ void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCe
     if (DEBUG)
         RCLCPP_INFO(this->get_logger(), "[V2C] sensor1");
 
-    for (vector<pcl::PointXYZ>::iterator it = sensor1_vector.begin();
+    for (std::vector<pcl::PointXYZ>::iterator it = sensor1_vector.begin();
          it < sensor1_vector.end(); ++it)
     {
         if (DEBUG)
-            cout << "l" << it - sensor1_vector.begin() << "="
-                 << "[" << (*it).x << " " << (*it).y << " " << (*it).z << "]" << endl;
+            std::cout << "l" << it - sensor1_vector.begin() << "="
+                      << "[" << (*it).x << " " << (*it).y << " " << (*it).z << "]" << std::endl;
     }
 
     // sync_iterations is designed to extract a calibration result every single
@@ -709,30 +560,30 @@ void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCe
     // Normal operation (sync_iterations=false)
     if (sensor1Received && sensor2Received)
     {
-        cout << min(sensor1_count, sensor2_count) << "/30 iterations" << '\r' << flush;
+        std::cout << std::min(sensor1_count, sensor2_count) << "/30 iterations" << '\r' << std::flush;
 
         std_msgs::msg::Int32 it;
-        it.data = min(sensor1_count, sensor2_count);
+        it.data = std::min(sensor1_count, sensor2_count);
         iterations_pub->publish(it);
 
         if (sensor1_count >= TARGET_ITERATIONS &&
             sensor2_count >= TARGET_ITERATIONS)
         {
-            cout << endl;
+            std::cout << std::endl;
             sensor1_sub.reset();
             sensor2_sub.reset();
 
-            string answer;
+            std::string answer;
             if (single_pose_mode)
             {
                 answer = "n";
             }
             else
             {
-                cout << "Target iterations reached. Do you need another target "
-                        "location? [y/N]"
-                     << endl;
-                getline(cin, answer);
+                std::cout << "Target iterations reached. Do you need another target "
+                             "location? [y/N]"
+                          << std::endl;
+                getline(std::cin, answer);
             }
             if (answer == "n" || answer == "N" || answer == "")
             {
@@ -744,9 +595,9 @@ void Registration::sensor1_callback(const calibration_interfaces::msg::ClusterCe
                 if (results_every_pose)
                     calibrateExtrinsics(-1);
                 TARGET_POSITIONS_COUNT++;
-                cout << "Please, move the target to its new position and adjust the "
-                        "filters for each sensor before the calibration starts."
-                     << endl;
+                std::cout << "Please, move the target to its new position and adjust the "
+                             "filters for each sensor before the calibration starts."
+                          << std::endl;
                 // Start over if other position of the target is required
                 std_msgs::msg::Empty myMsg;
                 sensor_switch_pub->publish(myMsg); // Set sensor nodes to warmup phase
@@ -786,33 +637,33 @@ void Registration::sensor2_callback(const calibration_interfaces::msg::ClusterCe
     if (!S2_WARMUP_DONE && S1_WARMUP_DONE)
     {
         S2_WARMUP_COUNT++;
-        cout << "Clusters from " << sensor2_frame_id << ": " << S2_WARMUP_COUNT
-             << "/10" << '\r' << flush;
+        std::cout << "Clusters from " << sensor2_frame_id << ": " << S2_WARMUP_COUNT
+                  << "/10" << '\r' << std::flush;
         if (S2_WARMUP_COUNT >= 10) // TODO: Change to param?
         {
-            cout << endl;
+            std::cout << std::endl;
             sensor1_sub.reset();
             sensor2_sub.reset();
 
-            cout << "Clusters from " << sensor2_frame_id
-                 << " received. Is the warmup done? (you can also reset this "
-                    "position) [Y/n/r]"
-                 << endl;
-            string answer;
-            getline(cin, answer);
+            std::cout << "Clusters from " << sensor2_frame_id
+                      << " received. Is the warmup done? (you can also reset this "
+                         "position) [Y/n/r]"
+                      << std::endl;
+            std::string answer;
+            getline(std::cin, answer);
             if (answer == "y" || answer == "Y" || answer == "")
             {
                 S2_WARMUP_DONE = !S2_WARMUP_DONE;
 
                 if (!S1_WARMUP_DONE)
                 {
-                    cout << "Filters for sensor 2 are adjusted now. Please, proceed with "
-                            "the other sensor."
-                         << endl;
+                    std::cout << "Filters for sensor 2 are adjusted now. Please, proceed with "
+                                 "the other sensor."
+                              << std::endl;
                 }
                 else
                 { // Both sensors adjusted
-                    cout << "Warmup phase completed. Starting calibration phase." << endl;
+                    std::cout << "Warmup phase completed. Starting calibration phase." << std::endl;
                     std_msgs::msg::Empty myMsg;
                     sensor_switch_pub->publish(myMsg); //
                 }
@@ -829,9 +680,9 @@ void Registration::sensor2_callback(const calibration_interfaces::msg::ClusterCe
                 sensor2Received = false;
                 sensor1_count = 0;
                 sensor2_count = 0;
-                cout << "Please, adjust the filters for each sensor before the "
-                        "calibration starts."
-                     << endl;
+                std::cout << "Please, adjust the filters for each sensor before the "
+                             "calibration starts."
+                          << std::endl;
             }
             else
             { // Reset counter to allow further warmup
@@ -922,12 +773,12 @@ void Registration::sensor2_callback(const calibration_interfaces::msg::ClusterCe
     if (DEBUG)
         RCLCPP_INFO(this->get_logger(), "[V2C] sensor2");
 
-    for (vector<pcl::PointXYZ>::iterator it = sensor2_vector.begin();
+    for (std::vector<pcl::PointXYZ>::iterator it = sensor2_vector.begin();
          it < sensor2_vector.end(); ++it)
     {
         if (DEBUG)
-            cout << "c" << it - sensor2_vector.begin() << "="
-                 << "[" << (*it).x << " " << (*it).y << " " << (*it).z << "]" << endl;
+            std::cout << "c" << it - sensor2_vector.begin() << "="
+                      << "[" << (*it).x << " " << (*it).y << " " << (*it).z << "]" << std::endl;
     }
 
     // sync_iterations is designed to extract a calibration result every single
@@ -955,30 +806,30 @@ void Registration::sensor2_callback(const calibration_interfaces::msg::ClusterCe
     // Normal operation (sync_iterations=false)
     if (sensor1Received && sensor2Received)
     {
-        cout << min(sensor1_count, sensor2_count) << "/30 iterations" << '\r' << flush;
+        std::cout << std::min(sensor1_count, sensor2_count) << "/30 iterations" << '\r' << std::flush;
 
         std_msgs::msg::Int32 it;
-        it.data = min(sensor1_count, sensor2_count);
+        it.data = std::min(sensor1_count, sensor2_count);
         iterations_pub->publish(it);
 
         if (sensor1_count >= TARGET_ITERATIONS &&
             sensor2_count >= TARGET_ITERATIONS)
         {
-            cout << endl;
+            std::cout << std::endl;
             sensor1_sub.reset();
             sensor2_sub.reset();
 
-            string answer;
+            std::string answer;
             if (single_pose_mode)
             {
                 answer = "n";
             }
             else
             {
-                cout << "Target iterations reached. Do you need another target "
-                        "location? [y/N]"
-                     << endl;
-                getline(cin, answer);
+                std::cout << "Target iterations reached. Do you need another target "
+                             "location? [y/N]"
+                          << std::endl;
+                getline(std::cin, answer);
             }
             if (answer == "n" || answer == "N" || answer == "")
             {
@@ -990,9 +841,9 @@ void Registration::sensor2_callback(const calibration_interfaces::msg::ClusterCe
                 if (results_every_pose)
                     calibrateExtrinsics(-1);
                 TARGET_POSITIONS_COUNT++;
-                cout << "Please, move the target to its new position and adjust the "
-                        "filters for each sensor before the calibration starts."
-                     << endl;
+                std::cout << "Please, move the target to its new position and adjust the "
+                             "filters for each sensor before the calibration starts."
+                          << std::endl;
                 // Start over if other position of the target is required
                 std_msgs::msg::Empty myMsg;
                 sensor_switch_pub->publish(myMsg); // Set sensor nodes to warmup phase

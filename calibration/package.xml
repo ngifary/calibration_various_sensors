@@ -3,7 +3,7 @@
 <package format="3">
   <name>calibration</name>
   <version>1.0.1</version>
-  <description>The velo2cam_calibration package</description>
+  <description>The laser2cam_calibration package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <maintainer email="nizam.gifary@stud.uni-due.de">nizamgifary</maintainer>

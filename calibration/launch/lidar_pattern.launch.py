@@ -12,10 +12,14 @@ from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
+    stdout = LaunchConfiguration('stdout')
     cloud_topic = LaunchConfiguration('cloud_topic')
     sensor_id = LaunchConfiguration('sensor_id')
 
     # args that can be set from the command line or a default will be used
+    stdout_launch_arg = DeclareLaunchArgument(
+        'stdout', default_value='screen'
+    )
     cloud_topic_launch_arg = DeclareLaunchArgument(
         'cloud_topic', default_value='/sick_mrs6124/sick_points'
     )
@@ -45,7 +49,8 @@ def generate_launch_description():
                         'filter_limit_max': 1.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }]),
+                    }],
+                    output=stdout),
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
@@ -62,7 +67,8 @@ def generate_launch_description():
                         'filter_limit_max': 0.5,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }]),
+                    }],
+                    output=stdout),
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
@@ -79,9 +85,10 @@ def generate_launch_description():
                         'filter_limit_max': 1.5,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }]),
+                    }],
+                    output=stdout),
         ],
-        output='screen',
+        output=stdout,
     )
 
     lidar_pattern_node = Node(
@@ -95,13 +102,15 @@ def generate_launch_description():
         parameters=[{
             'passthrough_radius_min': 1.0,
             'passthrough_radius_max': 6.0,
-            'circle_radius' : 0.06,
-            'delta_width_circles' : 0.09,
-            'delta_height_circles' : 0.14
-        }]
+            'circle_radius': 0.06,
+            'delta_width_circles': 0.09,
+            'delta_height_circles': 0.14
+        }],
+        output=stdout
     )
 
     return LaunchDescription([
+        stdout_launch_arg,
         cloud_topic_launch_arg,
         sensor_id_launch_arg,
         container,
