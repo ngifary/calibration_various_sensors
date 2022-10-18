@@ -58,7 +58,7 @@ def generate_launch_description():
             'delta_height_qr_center': 0.35,
             'delta_width_circles': 0.5,
             'delta_height_circles': 0.4,
-            'save_to_file': True
+            'save_to_file': False
         }],
         output=stdout
     )

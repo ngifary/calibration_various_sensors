@@ -49,8 +49,7 @@ def generate_launch_description():
                         'filter_limit_max': 1.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }],
-                    output=stdout),
+                    }]),
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
@@ -63,12 +62,11 @@ def generate_launch_description():
                     ],
                     parameters=[{
                         'filter_field_name': 'y',
-                        'filter_limit_min': -0.0,
-                        'filter_limit_max': 0.5,
+                        'filter_limit_min': -2.0,
+                        'filter_limit_max': 2.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }],
-                    output=stdout),
+                    }]),
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
@@ -82,11 +80,10 @@ def generate_launch_description():
                     parameters=[{
                         'filter_field_name': 'x',
                         'filter_limit_min': 0.0,
-                        'filter_limit_max': 1.5,
+                        'filter_limit_max': 7.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
-                    }],
-                    output=stdout),
+                    }]),
         ],
         output=stdout,
     )
@@ -101,11 +98,11 @@ def generate_launch_description():
         ],
         parameters=[{
             'passthrough_radius_min': 1.0,
-            'passthrough_radius_max': 6.0,
-            'circle_radius': 0.06,
-            'delta_width_circles': 0.09,
-            'delta_height_circles': 0.14,
-            'save_to_file': True
+            'passthrough_radius_max': 7.0,
+            # 'circle_radius': 0.06,
+            # 'delta_width_circles': 0.09,
+            # 'delta_height_circles': 0.14,
+            'save_to_file': False
         }],
         output=stdout
     )

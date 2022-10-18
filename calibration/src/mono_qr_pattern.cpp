@@ -5,6 +5,68 @@
 
 #include "mono_qr_pattern.hpp"
 
+namespace
+{
+  const char *about = "Pose estimation using a ArUco Planar Grid board";
+  const char *keys =
+      "{w        |       | Number of squares in X direction }"
+      "{h        |       | Number of squares in Y direction }"
+      "{l        |       | Marker side lenght (in pixels) }"
+      "{s        |       | Separation between two consecutive markers in the grid (in pixels)}"
+      "{d        |       | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, DICT_4X4_250=2,"
+      "DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, DICT_5X5_250=6, DICT_5X5_1000=7, "
+      "DICT_6X6_50=8, DICT_6X6_100=9, DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12,"
+      "DICT_7X7_100=13, DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
+      "{c        |       | Output file with calibrated camera parameters }"
+      "{v        |       | Input from video file, if ommited, input comes from camera }"
+      "{ci       | 0     | Camera id if input doesnt come from video (-v) }"
+      "{dp       |       | File of marker detector parameters }"
+      "{rs       |       | Apply refind strategy }"
+      "{r        |       | show rejected candidates too }";
+}
+
+/**
+ */
+static bool readCameraParameters(std::string filename, cv::Mat &camMatrix, cv::Mat &distCoeffs)
+{
+  cv::FileStorage fs(filename, cv::FileStorage::READ);
+  if (!fs.isOpened())
+    return false;
+  fs["camera_matrix"] >> camMatrix;
+  fs["distortion_coefficients"] >> distCoeffs;
+  return true;
+}
+
+/**
+ */
+static bool readDetectorParameters(std::string filename, cv::Ptr<cv::aruco::DetectorParameters> &params)
+{
+  cv::FileStorage fs(filename, cv::FileStorage::READ);
+  if (!fs.isOpened())
+    return false;
+  fs["adaptiveThreshWinSizeMin"] >> params->adaptiveThreshWinSizeMin;
+  fs["adaptiveThreshWinSizeMax"] >> params->adaptiveThreshWinSizeMax;
+  fs["adaptiveThreshWinSizeStep"] >> params->adaptiveThreshWinSizeStep;
+  fs["adaptiveThreshConstant"] >> params->adaptiveThreshConstant;
+  fs["minMarkerPerimeterRate"] >> params->minMarkerPerimeterRate;
+  fs["maxMarkerPerimeterRate"] >> params->maxMarkerPerimeterRate;
+  fs["polygonalApproxAccuracyRate"] >> params->polygonalApproxAccuracyRate;
+  fs["minCornerDistanceRate"] >> params->minCornerDistanceRate;
+  fs["minDistanceToBorder"] >> params->minDistanceToBorder;
+  fs["minMarkerDistanceRate"] >> params->minMarkerDistanceRate;
+  fs["cornerRefinementMethod"] >> params->cornerRefinementMethod;
+  fs["cornerRefinementWinSize"] >> params->cornerRefinementWinSize;
+  fs["cornerRefinementMaxIterations"] >> params->cornerRefinementMaxIterations;
+  fs["cornerRefinementMinAccuracy"] >> params->cornerRefinementMinAccuracy;
+  fs["markerBorderBits"] >> params->markerBorderBits;
+  fs["perspectiveRemovePixelPerCell"] >> params->perspectiveRemovePixelPerCell;
+  fs["perspectiveRemoveIgnoredMarginPerCell"] >> params->perspectiveRemoveIgnoredMarginPerCell;
+  fs["maxErroneousBitsInBorderRate"] >> params->maxErroneousBitsInBorderRate;
+  fs["minOtsuStdDev"] >> params->minOtsuStdDev;
+  fs["errorCorrectionRate"] >> params->errorCorrectionRate;
+  return true;
+}
+
 MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
 {
   RCLCPP_INFO(get_logger(), "[%s] Starting....", get_name());

@@ -243,53 +243,57 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   coefficients_v(2) = coefficients->values[2];
   coefficients_v(3) = coefficients->values[3];
 
-  // Get edges points by range
-  std::vector<std::vector<LaserScanner::Point *>> channels =
-      LaserScanner::getChannels(*lasercloud, channels_count_);
-  for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels.begin();
-       channel < channels.end(); ++channel)
-  {
-    LaserScanner::Point *prev, *succ;
-    if (channel->empty())
-      continue;
+  // // Get edges points by range
+  // std::vector<std::vector<LaserScanner::Point *>> channels =
+  //     LaserScanner::getChannels(*lasercloud, channels_count_);
+  // for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels.begin();
+  //      channel < channels.end(); ++channel)
+  // {
+  //   // LaserScanner::Point *prev, *succ;
+  //   if (channel->empty())
+  //     continue;
 
-    (*channel->begin())->intensity = 0;
-    (*(channel->end() - 1))->intensity = 0;
-    for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin() + 1;
-         pt < channel->end() - 1; pt++)
-    {
-      LaserScanner::Point *prev = *(pt - 1);
-      LaserScanner::Point *succ = *(pt + 1);
-      (*pt)->intensity =
-          std::max(std::max(prev->range - (*pt)->range, succ->range - (*pt)->range), 0.f);
-    }
-  }
+  //   (*channel->begin())->intensity = 0;
+  //   (*(channel->end() - 1))->intensity = 0;
+  //   for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin() + 1;
+  //        pt < channel->end() - 1; pt++)
+  //   {
+  //     LaserScanner::Point *prev = *(pt - 1);
+  //     LaserScanner::Point *succ = *(pt + 1);
+  //     (*pt)->intensity =
+  //         std::max(std::max(prev->range - (*pt)->range, succ->range - (*pt)->range), 0.f);
+  //   }
+  // }
 
-  float THRESHOLD =
-      gradient_threshold_; // 10 cm between the pattern and the background
-  for (pcl::PointCloud<LaserScanner::Point>::iterator pt =
-           lasercloud->points.begin();
-       pt < lasercloud->points.end(); ++pt)
-  {
-    if (pt->intensity > THRESHOLD)
-    {
-      edges_cloud->push_back(*pt);
-    }
-  }
+  // float THRESHOLD =
+  //     gradient_threshold_; // 10 cm between the pattern and the background
+  // for (pcl::PointCloud<LaserScanner::Point>::iterator pt =
+  //          lasercloud->points.begin();
+  //      pt < lasercloud->points.end(); ++pt)
+  // {
+  //   if (pt->intensity > THRESHOLD)
+  //   {
+  //     edges_cloud->push_back(*pt);
+  //   }
+  // }
 
-  if (edges_cloud->points.size() == 0)
-  {
-    // Exit 2: pattern edges not found
-    RCLCPP_WARN(this->get_logger(), "[%s] Could not detect pattern edges.", get_name());
-    return;
-  }
+  // if (edges_cloud->points.size() == 0)
+  // {
+  //   // Exit 2: pattern edges not found
+  //   RCLCPP_WARN(this->get_logger(), "[%s] Could not detect pattern edges.", get_name());
+  //   return;
+  // }
 
-  // Get points belonging to plane in pattern pointcloud
-  pcl::SampleConsensusModelPlane<LaserScanner::Point>::Ptr dit(
-      new pcl::SampleConsensusModelPlane<LaserScanner::Point>(edges_cloud));
-  std::vector<int> inliers2;
-  dit->selectWithinDistance(coefficients_v, plane_distance_inliers_, inliers2);
-  pcl::copyPointCloud<LaserScanner::Point>(*edges_cloud, inliers2, *pattern_cloud);
+  // if (DEBUG)
+  //   RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in edges_cloud of size %lu",
+  //               get_name(), edges_cloud->points.size());
+
+  // // Get points belonging to plane in pattern pointcloud
+  // pcl::SampleConsensusModelPlane<LaserScanner::Point>::Ptr dit(
+  //     new pcl::SampleConsensusModelPlane<LaserScanner::Point>(edges_cloud));
+  // std::vector<int> inliers2;
+  // dit->selectWithinDistance(coefficients_v, plane_distance_inliers_, inliers2);
+  // pcl::copyPointCloud<LaserScanner::Point>(*edges_cloud, inliers2, *pattern_cloud);
 
   // Laser scanner specific info no longer needed for calibration
   // so standard PointXYZ is used from now on
@@ -301,23 +305,28 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
       cloud_f(new pcl::PointCloud<pcl::PointXYZ>),
       centroid_candidates(new pcl::PointCloud<pcl::PointXYZ>);
 
-  std::vector<std::vector<LaserScanner::Point *>> channels2 =
-      LaserScanner::getChannels(*pattern_cloud, channels_count_);
+  // std::vector<std::vector<LaserScanner::Point *>> channels2 =
+  //     LaserScanner::getChannels(*pattern_cloud, channels_count_);
+  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 1.", get_name());
+  pcl::copyPointCloud<LaserScanner::Point>(*laser_filtered, *inliers, *pattern_cloud);
+  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 2.", get_name());
+  pcl::copyPointCloud<LaserScanner::Point>(*pattern_cloud, *circles_cloud);
+  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 3.", get_name());
 
-  // Conversion from LaserScanner::Point to pcl::PointXYZ
-  for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels2.begin();
-       channel < channels2.end(); ++channel)
-  {
-    for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin();
-         pt < channel->end(); ++pt)
-    {
-      pcl::PointXYZ point;
-      point.x = (*pt)->x;
-      point.y = (*pt)->y;
-      point.z = (*pt)->z;
-      circles_cloud->push_back(point);
-    }
-  }
+  // // Conversion from LaserScanner::Point to pcl::PointXYZ
+  // for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels2.begin();
+  //      channel < channels2.end(); ++channel)
+  // {
+  //   for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin();
+  //        pt < channel->end(); ++pt)
+  //   {
+  //     pcl::PointXYZ point;
+  //     point.x = (*pt)->x;
+  //     point.y = (*pt)->y;
+  //     point.z = (*pt)->z;
+  //     circles_cloud->push_back(point);
+  //   }
+  // }
 
   // Publishing "pattern_circles" cloud (points belonging to the detected plane)
   if (DEBUG)
@@ -341,6 +350,17 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   Eigen::Affine3f rotation =
       getRotationMatrix(floor_plane_normal_vector, xy_plane_normal_vector);
   pcl::transformPointCloud(*circles_cloud, *xy_cloud, rotation);
+
+  if (DEBUG)
+  {
+    pcl::PCDWriter writer;
+    writer.write("calibration_range_filtered.pcd", *laser_filtered, false);
+    writer.write("cloud_edge_detected.pcd", *circles_cloud, false);
+    writer.write("cloud_z_rotated.pcd", *xy_cloud, false);
+    return;
+    // writer.write("cloud_cumulative_centres.pcd", *cumulative_cloud, false);
+    // writer.write("cloud_centres.pcd", *centers_cloud, false);
+  }
 
   // Publishing "rotated_pattern" cloud (plane transformed to be aligned with
   // XY)
