@@ -56,8 +56,8 @@ ament_target_dependencies(disp_masker rclcpp cv_bridge message_filters sensor_ms
 add_executable(stereo_pattern src/stereo_pattern.cpp)
 ament_target_dependencies(stereo_pattern rclcpp message_filters pcl_ros sensor_msgs std_msgs calibration_interfaces)
 
-add_executable(plane src/plane.cpp)
-ament_target_dependencies(plane rclcpp pcl_ros sensor_msgs)
+add_executable(plane_segmentation src/plane.cpp)
+ament_target_dependencies(plane_segmentation rclcpp pcl_ros sensor_msgs)
 
 install(TARGETS
   laser2cam_calibration
@@ -65,7 +65,7 @@ install(TARGETS
   mono_qr_pattern
   disp_masker
   stereo_pattern
-  plane
+  plane_segmentation
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY 

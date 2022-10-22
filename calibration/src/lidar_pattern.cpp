@@ -149,7 +149,7 @@ void LidarPattern::initializeParams()
   desc.name = "target_radius_tolerance";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  target_radius_tolerance_ = declare_parameter(desc.name, 0.1);
+  target_radius_tolerance_ = declare_parameter(desc.name, 0.01);
 
   desc.name = "min_centers_found";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;

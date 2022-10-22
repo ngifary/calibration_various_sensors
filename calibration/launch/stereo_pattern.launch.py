@@ -14,6 +14,12 @@ from launch_ros.descriptions import ComposableNode
 def generate_launch_description():
     stdout = LaunchConfiguration('stdout')
     camera_name = LaunchConfiguration('camera_name')
+    left_raw_image_topic = LaunchConfiguration('left_raw_image_topic')
+    left_rect_image_topic = LaunchConfiguration('left_rect_image_topic')
+    left_camera_topic = LaunchConfiguration('left_camera_topic')
+    right_raw_image_topic = LaunchConfiguration('right_raw_image_topic')
+    right_rect_image_topic = LaunchConfiguration('right_rect_image_topic')
+    right_camera_topic = LaunchConfiguration('right_camera_topic')
     frame_name = LaunchConfiguration('frame_name')
     sensor_id = LaunchConfiguration('sensor_id')
 
@@ -23,6 +29,24 @@ def generate_launch_description():
     )
     camera_name_launch_arg = DeclareLaunchArgument(
         "camera_name", default_value='nerian_stereo'
+    )
+    left_image_raw_topic_launch_arg = DeclareLaunchArgument(
+        'left_raw_image_topic', default_value=[camera_name, '/left_image/image_raw']
+    )
+    left_image_rect_topic_launch_arg = DeclareLaunchArgument(
+        'left_rect_image_topic', default_value=[camera_name, '/left_image/image_rect']
+    )
+    left_camera_topic_launch_arg = DeclareLaunchArgument(
+        'left_camera_topic', default_value=[camera_name, '/left_image/camera_info']
+    )
+    right_image_raw_topic_launch_arg = DeclareLaunchArgument(
+        'right_raw_image_topic', default_value=[camera_name, '/right_image/image_raw']
+    )
+    right_image_rect_topic_launch_arg = DeclareLaunchArgument(
+        'left_rect_image_topic', default_value=[camera_name, '/right_image/image_rect']
+    )
+    right_camera_topic_launch_arg = DeclareLaunchArgument(
+        'right_camera_topic', default_value=[camera_name, '/right_image/camera_info']
     )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'
@@ -39,9 +63,7 @@ def generate_launch_description():
     use_color = LaunchConfiguration('use_color')
     use_system_default_qos = LaunchConfiguration('use_system_default_qos')
     launch_image_proc = LaunchConfiguration('launch_image_proc')
-    left_namespace = LaunchConfiguration('left_namespace')
-    right_namespace = LaunchConfiguration('right_namespace')
-    container = LaunchConfiguration('container')
+    launch_stereo_image_proc = LaunchConfiguration('launch_image_proc')
     stereo_algorithm = LaunchConfiguration('stereo_algorithm')
     prefilter_size = LaunchConfiguration('prefilter_size')
     prefilter_cap = LaunchConfiguration('prefilter_cap')
@@ -78,23 +100,12 @@ def generate_launch_description():
         description='Use the RMW QoS settings for the image and camera info subscriptions.'
     )
     launch_image_proc_launch_arg = DeclareLaunchArgument(
-        name='launch_image_proc', default_value='True',
+        name='launch_image_proc', default_value='False',
         description='Whether to launch debayer and rectify nodes from image_proc.'
     )
-    left_namespace_launch_arg = DeclareLaunchArgument(
-        name='left_namespace', default_value='left_image',
-        description='Namespace for the left camera'
-    )
-    right_namespace_launch_arg = DeclareLaunchArgument(
-        name='right_namespace', default_value='right_image',
-        description='Namespace for the right camera'
-    )
-    container_launch_arg = DeclareLaunchArgument(
-        name='container', default_value='',
-        description=(
-            'Name of an existing node container to load launched nodes into. '
-            'If unset, a new container will be created.'
-        )
+    launch_stereo_image_proc_launch_arg = DeclareLaunchArgument(
+        name='launch_stereo_image_proc', default_value='False',
+        description='Whether to launch stereo image processing and gives point cloud from image pair.'
     )
     # Stereo algorithm parameters
     stereo_algorithm_launch_arg = DeclareLaunchArgument(
@@ -170,12 +181,9 @@ def generate_launch_description():
                     name='left_rectify_mono_node',
                     # Remap subscribers and publishers
                     remappings=[
-                        ('image', [camera_name, '/',
-                         left_namespace, '/image_raw']),
-                        ('camera_info', [camera_name, '/',
-                         left_namespace, '/camera_info']),
-                        ('image_rect', [camera_name, '/',
-                         left_namespace, '/image_rect'])
+                        ('image', left_raw_image_topic),
+                        ('camera_info', left_camera_topic),
+                        ('image_rect', left_rect_image_topic),
                     ]),
                 ComposableNode(
                     package='image_proc',
@@ -183,12 +191,9 @@ def generate_launch_description():
                     name='right_rectify_mono_node',
                     # Remap subscribers and publishers
                     remappings=[
-                        ('image', [camera_name, '/',
-                         right_namespace, '/image_raw']),
-                        ('camera_info', [camera_name, '/',
-                         right_namespace, '/camera_info']),
-                        ('image_rect', [camera_name, '/',
-                         right_namespace, '/image_rect'])
+                        ('image', right_raw_image_topic),
+                        ('camera_info', right_camera_topic),
+                        ('image_rect', right_rect_image_topic),
                     ])
         ],
         output=stdout,
@@ -196,7 +201,7 @@ def generate_launch_description():
     )
 
     """Generate launch description with multiple components."""
-    disparity_container = ComposableNodeContainer(
+    stereo_image_proc_container = ComposableNodeContainer(
         name=['disparity_', sensor_id],
         namespace=camera_name,
         package='rclcpp_components',
@@ -225,14 +230,10 @@ def generate_launch_description():
                         'full_dp': full_dp
                     }],
                     remappings=[
-                        ('left/image_rect',
-                         [camera_name, '/', left_namespace, '/image_rect']),
-                        ('left/camera_info',
-                         [camera_name, '/', left_namespace, '/camera_info']),
-                        ('right/image_rect',
-                         [camera_name, '/', right_namespace, '/image_rect']),
-                        ('right/camera_info',
-                         [camera_name, '/', right_namespace, '/camera_info'])
+                        ('left/image_rect', left_rect_image_topic),
+                        ('left/camera_info', left_camera_topic),
+                        ('right/image_rect', right_rect_image_topic),
+                        ('right/camera_info', right_camera_topic),
                     ]),
                 ComposableNode(
                     package='stereo_image_proc',
@@ -245,15 +246,13 @@ def generate_launch_description():
                         'use_system_default_qos': use_system_default_qos
                     }],
                     remappings=[
-                        ('left/camera_info',
-                         [camera_name, '/', left_namespace, '/camera_info']),
-                        ('right/camera_info',
-                         [camera_name, '/', right_namespace, '/camera_info']),
-                        ('left/image_rect_color',
-                         [camera_name, '/', left_namespace, '/image_rect'])
+                        ('left/camera_info', left_camera_topic),
+                        ('right/camera_info', right_camera_topic),
+                        ('left/image_rect_color', left_rect_image_topic)
                     ])
         ],
-        output=stdout
+        output=stdout,
+        condition=IfCondition(launch_stereo_image_proc),
     )
 
     opencv_node = Node(
@@ -262,14 +261,15 @@ def generate_launch_description():
         name=['opencv_', sensor_id],
         namespace=camera_name,
         remappings=[
-            ('image', [left_namespace, '/image_rect'])
+            ('image', left_rect_image_topic),
+            ('edge', 'edge_detection/image')
         ]
     )
 
-    v2c_disp_masker_node = Node(
+    disp_masker_node = Node(
         package='calibration',
-        executable='v2c_disp_masker',
-        name=['v2c_disp_masker_', sensor_id],
+        executable='disp_masker',
+        name=['disp_masker_', sensor_id],
         namespace=camera_name,
         remappings=[
             ('image', 'disparity'),
@@ -298,12 +298,11 @@ def generate_launch_description():
                         'use_system_default_qos': LaunchConfiguration('use_system_default_qos')
                     }],
                     remappings=[
-                        ('left/camera_info',
-                         ['stereo_camera_info', '/left_info']),
-                        ('right/camera_info',
-                         ['stereo_camera_info', '/right_info']),
-                        ('left/image_rect_color',
-                         [left_namespace, '/image_rect_color'])
+                        ('left/camera_info', left_camera_topic),
+                        ('right/camera_info', right_camera_topic),
+                        ('left/image_rect_color', 'edge_detection/image'),
+                        ('disparity', 'edges_disparity'),
+                        ('points2', 'edge_points2')
                     ])
         ],
         output=stdout
@@ -375,9 +374,9 @@ def generate_launch_description():
         output=stdout
     )
 
-    v2c_plane_segmentation_node = Node(
+    plane_segmentation_node = Node(
         package='calibration',
-        executable='v2c_plane_segmentation',
+        executable='plane_segmentation',
         name=['planar_segmentation_', sensor_id],
         namespace=camera_name,
         remappings=[
@@ -407,12 +406,18 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='stereo_ros_tf',
         arguments=['0', '0', '0', '-1.57079632679', '0',
-                   '-1.57079632679', ['rotated_', frame_name], frame_name, '100']
+                   '-1.57079632679', ['rotated_', frame_name], frame_name]
     )
 
     return LaunchDescription([
         stdout_launch_arg,
         camera_name_launch_arg,
+        left_image_raw_topic_launch_arg,
+        left_image_rect_topic_launch_arg,
+        left_camera_topic_launch_arg,
+        right_image_raw_topic_launch_arg,
+        right_image_rect_topic_launch_arg,
+        right_camera_topic_launch_arg,
         frame_name_launch_arg,
         sensor_id_launch_arg,
         #region Configureable
@@ -421,9 +426,7 @@ def generate_launch_description():
         use_color_launch_arg,
         use_system_default_qos_launch_arg,
         launch_image_proc_launch_arg,
-        left_namespace_launch_arg,
-        right_namespace_launch_arg,
-        container_launch_arg,
+        launch_stereo_image_proc_launch_arg,
         stereo_algorithm_launch_arg,
         prefilter_size_launch_arg,
         prefilter_cap_launch_arg,
@@ -440,12 +443,12 @@ def generate_launch_description():
         full_dp_launch_arg,
         #endregion
         image_proc_container,
-        disparity_container,
-        # opencv_node,
-        # v2c_disp_masker_node,
-        # pointclouder_edges_container,
-        # stereo_pcl_container,
-        # v2c_plane_segmentation_node,
-        # stereo_pattern_node,
+        stereo_image_proc_container,
+        opencv_node,
+        disp_masker_node,
+        pointclouder_edges_container,
+        stereo_pcl_container,
+        plane_segmentation_node,
+        stereo_pattern_node,
         tf2_node
     ])

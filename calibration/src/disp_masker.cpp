@@ -5,11 +5,8 @@
 #include "cv_bridge/cv_bridge.h"
 #include "message_filters/subscriber.h"
 #include "message_filters/sync_policies/exact_time.h"
-// #include <ros/ros.h>
 #include "rclcpp/rclcpp.hpp"
-// #include <sensor_msgs/Image.h>
 #include "sensor_msgs/msg/image.hpp"
-// #include <stereo_msgs/DisparityImage.h>
 #include "stereo_msgs/msg/disparity_image.hpp"
 
 #include "opencv2/opencv.hpp"
@@ -17,13 +14,10 @@
 class Masker : public rclcpp::Node
 {
 public:
-  // ros::NodeHandle nh_;
-
-  Masker()
-      : Node("plane_segmentation"),
-        image_sub_(this, "image"),
-        mask_sub_(this, "mask"),
-        sync(ExSync(100), image_sub_, mask_sub_)
+  Masker() : Node("image_masker"),
+             image_sub_(this, "image"),
+             mask_sub_(this, "mask"),
+             sync(ExSync(100), image_sub_, mask_sub_)
   {
     masked_pub_ = this->create_publisher<stereo_msgs::msg::DisparityImage>("output", 1);
 
@@ -107,6 +101,7 @@ public:
     // Publish obstacle disparity
     masked_pub_->publish(*copy_disp.get());
   }
+
 private:
   message_filters::Subscriber<stereo_msgs::msg::DisparityImage> image_sub_;
   message_filters::Subscriber<sensor_msgs::msg::Image> mask_sub_;
