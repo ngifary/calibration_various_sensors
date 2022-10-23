@@ -15,6 +15,7 @@
 #include "std_msgs/msg/empty.hpp"
 #include "calibration_interfaces/msg/cluster_centroids.hpp"
 #include "laser2cam_utils.h"
+#include <queue>
 
 class LidarPattern : public rclcpp::Node
 {
@@ -27,6 +28,13 @@ private:
   void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser_cloud);
   rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
   void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
+  struct classcomp
+  {
+    bool operator()(const pcl::PointXYZ &a, const pcl::PointXYZ &b) const
+    {
+      return a.y > b.y;
+    }
+  };
   /* data */
   // Pubs Definition
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cumulative_pub, range_pub;
@@ -49,12 +57,11 @@ private:
   double angle_threshold_;
 
   // Non-Dynamic
-  int channels_count_;
   double cluster_tolerance_;
   int clouds_proc_ = 0, clouds_used_ = 0;
   int min_centers_found_;
   double plane_threshold_;
-  double gradient_threshold_;
+  double gap_threshold_;
   double plane_distance_inliers_;
   double circle_threshold_;
   double target_radius_tolerance_;

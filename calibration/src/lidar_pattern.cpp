@@ -131,10 +131,10 @@ void LidarPattern::initializeParams()
   desc.description = "";
   plane_threshold_ = declare_parameter(desc.name, 0.1);
 
-  desc.name = "gradient_threshold";
+  desc.name = "gap_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  gradient_threshold_ = declare_parameter(desc.name, 0.1);
+  gap_threshold_ = declare_parameter(desc.name, 0.01);
 
   desc.name = "plane_distance_inliers";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -166,11 +166,6 @@ void LidarPattern::initializeParams()
   desc.description = "minimum cluster size to frame ratio (-)";
   min_cluster_factor_ = declare_parameter(desc.name, 0.5);
 
-  desc.name = "channels_count";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
-  desc.description = "number of the laser scanner channel";
-  channels_count_ = declare_parameter(desc.name, 24);
-
   desc.name = "skip_warmup";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
   desc.description = "skip warmup";
@@ -187,11 +182,9 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] Processing cloud...", get_name());
 
-  // TODO: Check algorithm to find edges_cloud
   pcl::PointCloud<LaserScanner::Point>::Ptr lasercloud(new pcl::PointCloud<LaserScanner::Point>),
       laser_filtered(new pcl::PointCloud<LaserScanner::Point>),
-      pattern_cloud(new pcl::PointCloud<LaserScanner::Point>),
-      edges_cloud(new pcl::PointCloud<LaserScanner::Point>);
+      pattern_cloud(new pcl::PointCloud<LaserScanner::Point>);
 
   clouds_proc_++;
 
@@ -221,7 +214,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   plane_segmentation.setModelType(pcl::SACMODEL_PARALLEL_PLANE);
   plane_segmentation.setDistanceThreshold(plane_threshold_);
   plane_segmentation.setMethodType(pcl::SAC_RANSAC);
-  plane_segmentation.setAxis(Eigen::Vector3f(axis_[0], axis_[1], axis_[2]));
+  plane_segmentation.setAxis(axis_);
   plane_segmentation.setEpsAngle(angle_threshold_);
   plane_segmentation.setOptimizeCoefficients(true);
   plane_segmentation.setMaxIterations(1000);
@@ -236,6 +229,12 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     return;
   }
 
+  pcl::PointCloud<pcl::PointXYZ>::Ptr plane_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+  pcl::copyPointCloud<LaserScanner::Point>(*laser_filtered, *inliers, *plane_cloud);
+
+  LaserScanner::toPlane(*plane_cloud, *coefficients);
+
   // Copy coefficients to proper object for further filtering
   Eigen::VectorXf coefficients_v(4);
   coefficients_v(0) = coefficients->values[0];
@@ -243,96 +242,21 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   coefficients_v(2) = coefficients->values[2];
   coefficients_v(3) = coefficients->values[3];
 
-  // // Get edges points by range
-  // std::vector<std::vector<LaserScanner::Point *>> channels =
-  //     LaserScanner::getChannels(*lasercloud, channels_count_);
-  // for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels.begin();
-  //      channel < channels.end(); ++channel)
-  // {
-  //   // LaserScanner::Point *prev, *succ;
-  //   if (channel->empty())
-  //     continue;
-
-  //   (*channel->begin())->intensity = 0;
-  //   (*(channel->end() - 1))->intensity = 0;
-  //   for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin() + 1;
-  //        pt < channel->end() - 1; pt++)
-  //   {
-  //     LaserScanner::Point *prev = *(pt - 1);
-  //     LaserScanner::Point *succ = *(pt + 1);
-  //     (*pt)->intensity =
-  //         std::max(std::max(prev->range - (*pt)->range, succ->range - (*pt)->range), 0.f);
-  //   }
-  // }
-
-  // float THRESHOLD =
-  //     gradient_threshold_; // 10 cm between the pattern and the background
-  // for (pcl::PointCloud<LaserScanner::Point>::iterator pt =
-  //          lasercloud->points.begin();
-  //      pt < lasercloud->points.end(); ++pt)
-  // {
-  //   if (pt->intensity > THRESHOLD)
-  //   {
-  //     edges_cloud->push_back(*pt);
-  //   }
-  // }
-
-  // if (edges_cloud->points.size() == 0)
-  // {
-  //   // Exit 2: pattern edges not found
-  //   RCLCPP_WARN(this->get_logger(), "[%s] Could not detect pattern edges.", get_name());
-  //   return;
-  // }
-
-  // if (DEBUG)
-  //   RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in edges_cloud of size %lu",
-  //               get_name(), edges_cloud->points.size());
-
-  // // Get points belonging to plane in pattern pointcloud
-  // pcl::SampleConsensusModelPlane<LaserScanner::Point>::Ptr dit(
-  //     new pcl::SampleConsensusModelPlane<LaserScanner::Point>(edges_cloud));
-  // std::vector<int> inliers2;
-  // dit->selectWithinDistance(coefficients_v, plane_distance_inliers_, inliers2);
-  // pcl::copyPointCloud<LaserScanner::Point>(*edges_cloud, inliers2, *pattern_cloud);
-
   // Laser scanner specific info no longer needed for calibration
   // so standard PointXYZ is used from now on
-  pcl::PointCloud<pcl::PointXYZ>::Ptr circles_cloud(
-      new pcl::PointCloud<pcl::PointXYZ>),
+  pcl::PointCloud<pcl::PointXYZ>::Ptr edges_cloud(new pcl::PointCloud<pcl::PointXYZ>),
       xy_cloud(new pcl::PointCloud<pcl::PointXYZ>),
       aux_cloud(new pcl::PointCloud<pcl::PointXYZ>),
       auxrotated_cloud(new pcl::PointCloud<pcl::PointXYZ>),
       cloud_f(new pcl::PointCloud<pcl::PointXYZ>),
+      cloud_f_sorted(new pcl::PointCloud<pcl::PointXYZ>),
       centroid_candidates(new pcl::PointCloud<pcl::PointXYZ>);
-
-  // std::vector<std::vector<LaserScanner::Point *>> channels2 =
-  //     LaserScanner::getChannels(*pattern_cloud, channels_count_);
-  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 1.", get_name());
-  pcl::copyPointCloud<LaserScanner::Point>(*laser_filtered, *inliers, *pattern_cloud);
-  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 2.", get_name());
-  pcl::copyPointCloud<LaserScanner::Point>(*pattern_cloud, *circles_cloud);
-  RCLCPP_INFO(this->get_logger(), "[%s] No Problem 3.", get_name());
-
-  // // Conversion from LaserScanner::Point to pcl::PointXYZ
-  // for (std::vector<std::vector<LaserScanner::Point *>>::iterator channel = channels2.begin();
-  //      channel < channels2.end(); ++channel)
-  // {
-  //   for (std::vector<LaserScanner::Point *>::iterator pt = channel->begin();
-  //        pt < channel->end(); ++pt)
-  //   {
-  //     pcl::PointXYZ point;
-  //     point.x = (*pt)->x;
-  //     point.y = (*pt)->y;
-  //     point.z = (*pt)->z;
-  //     circles_cloud->push_back(point);
-  //   }
-  // }
 
   // Publishing "pattern_circles" cloud (points belonging to the detected plane)
   if (DEBUG)
   {
     sensor_msgs::msg::PointCloud2 lasercloud_ros2;
-    pcl::toROSMsg(*circles_cloud, lasercloud_ros2);
+    pcl::toROSMsg(*plane_cloud, lasercloud_ros2);
     lasercloud_ros2.header = laser_cloud->header;
     pattern_pub->publish(lasercloud_ros2);
   }
@@ -349,18 +273,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
 
   Eigen::Affine3f rotation =
       getRotationMatrix(floor_plane_normal_vector, xy_plane_normal_vector);
-  pcl::transformPointCloud(*circles_cloud, *xy_cloud, rotation);
-
-  if (DEBUG)
-  {
-    pcl::PCDWriter writer;
-    writer.write("calibration_range_filtered.pcd", *laser_filtered, false);
-    writer.write("cloud_edge_detected.pcd", *circles_cloud, false);
-    writer.write("cloud_z_rotated.pcd", *xy_cloud, false);
-    return;
-    // writer.write("cloud_cumulative_centres.pcd", *cumulative_cloud, false);
-    // writer.write("cloud_centres.pcd", *centers_cloud, false);
-  }
+  pcl::transformPointCloud(*plane_cloud, *xy_cloud, rotation);
 
   // Publishing "rotated_pattern" cloud (plane transformed to be aligned with
   // XY)
@@ -372,19 +285,70 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     rotated_pattern_pub->publish(ros_rotated_pattern);
   }
 
-  // Force pattern points to belong to computed plane
-  pcl::PointXYZ aux_point;
-  aux_point.x = 0;
-  aux_point.y = 0;
-  aux_point.z = (-coefficients_v(3) / coefficients_v(2));
-  aux_cloud->push_back(aux_point);
-  pcl::transformPointCloud(*aux_cloud, *auxrotated_cloud, rotation);
-  double zcoord_xyplane = auxrotated_cloud->at(0).z;
+  double zcoord_xyplane = xy_cloud->at(0).z;
 
-  for (pcl::PointCloud<pcl::PointXYZ>::iterator pt = xy_cloud->points.begin();
-       pt < xy_cloud->points.end(); ++pt)
+  // line detection
+  pcl::ModelCoefficients::Ptr coefficients2(new pcl::ModelCoefficients);
+  pcl::PointIndices::Ptr inliers2(new pcl::PointIndices);
+
+  pcl::SACSegmentation<pcl::PointXYZ> line_segmentation;
+  line_segmentation.setModelType(pcl::SACMODEL_LINE);
+  line_segmentation.setDistanceThreshold(0.005);
+  line_segmentation.setMethodType(pcl::SAC_RANSAC);
+  line_segmentation.setMaxIterations(1000);
+
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
+
+  while (xy_cloud->points.size() > 6)
   {
-    pt->z = zcoord_xyplane;
+    line_segmentation.setInputCloud(xy_cloud);
+    line_segmentation.segment(*inliers2, *coefficients2);
+
+    if (inliers2->indices.size() == 0)
+    {
+      break;
+    }
+
+    extract.setInputCloud(xy_cloud);
+    extract.setIndices(inliers2);
+    extract.setNegative(false);
+    extract.filter(*cloud_f);
+
+    // Get edges points by gap
+    std::priority_queue<pcl::PointXYZ, std::vector<pcl::PointXYZ>, classcomp> priQue;
+    for (unsigned int k = 0; k < cloud_f->size(); k++)
+      priQue.push(cloud_f->points[k]);
+    while (!priQue.empty())
+    {
+      const pcl::PointXYZ &point = priQue.top();
+      cloud_f_sorted->push_back(point);
+      priQue.pop();
+    }
+
+    float gap;
+    for (unsigned int l = 2; l < cloud_f_sorted->size() - 2; l++)
+    {
+      gap = pcl::squaredEuclideanDistance(cloud_f_sorted->points[l + 1], cloud_f_sorted->points[l]);
+      if (gap > (gap_threshold_ * gap_threshold_))
+      {
+        edges_cloud->push_back(cloud_f_sorted->points[l]);
+        edges_cloud->push_back(cloud_f_sorted->points[l + 1]);
+        l++;
+      }
+    }
+    cloud_f_sorted->clear();
+
+    // Remove inliers from pattern cloud to find next line
+    extract.setNegative(true);
+    extract.filter(*cloud_f);
+    xy_cloud.swap(cloud_f);
+  }
+
+  if (edges_cloud->points.size() == 0)
+  {
+    // Exit 2: pattern edges not found
+    RCLCPP_WARN(this->get_logger(), "[%s] Could not detect pattern edges.", get_name());
+    return;
   }
 
   // RANSAC circle detection
@@ -404,8 +368,8 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   pcl::ExtractIndices<pcl::PointXYZ> extract;
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in cloud of size %lu",
-                get_name(), xy_cloud->points.size());
-  while (xy_cloud->points.size() > 3)
+                get_name(), edges_cloud->points.size());
+  while (edges_cloud->points.size() > 3)
   {
     circle_segmentation.setInputCloud(xy_cloud);
     circle_segmentation.segment(*inliers3, *coefficients3);
@@ -418,7 +382,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
                     get_name());
       circle_segmentation.setOptimizeCoefficients(false);
 
-      circle_segmentation.setInputCloud(xy_cloud);
+      circle_segmentation.setInputCloud(edges_cloud);
       circle_segmentation.segment(*inliers3, *coefficients3);
 
       // Reset for next iteration
@@ -438,7 +402,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     centroid_candidates->push_back(center);
 
     // Remove inliers from pattern cloud to find next circle
-    extract.setInputCloud(xy_cloud);
+    extract.setInputCloud(edges_cloud);
     extract.setIndices(inliers3);
     extract.setNegative(true);
     extract.filter(*cloud_f);
@@ -446,7 +410,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
 
     if (DEBUG)
       RCLCPP_INFO(this->get_logger(), "[%s] Remaining points in cloud %lu",
-                  get_name(), xy_cloud->points.size());
+                  get_name(), edges_cloud->points.size());
   }
 
   if (centroid_candidates->size() < TARGET_NUM_CIRCLES)

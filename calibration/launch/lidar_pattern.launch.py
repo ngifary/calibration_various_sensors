@@ -99,9 +99,9 @@ def generate_launch_description():
         parameters=[{
             'passthrough_radius_min': 1.0,
             'passthrough_radius_max': 7.0,
-            # 'circle_radius': 0.06,
-            # 'delta_width_circles': 0.09,
-            # 'delta_height_circles': 0.14,
+            'circle_radius': 0.03,
+            'delta_width_circles': 0.14,
+            'delta_height_circles': 0.09,
             'save_to_file': False
         }],
         output=stdout

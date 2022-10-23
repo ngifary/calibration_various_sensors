@@ -19,12 +19,18 @@ namespace LaserScanner
 {
   struct Point
   {
-    PCL_ADD_POINT4D;       // quad-word XYZ
-    float intensity;       ///< laser intensity reading
-    std::uint16_t channel; ///< laser channel number
+    PCL_ADD_POINT4D; // quad-word XYZ
+    float intensity; ///< laser intensity reading
     float range;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW // ensure proper alignment
   } EIGEN_ALIGN16;
+
+  struct PointSphere
+  {
+    float radius; // linear
+    float theta;  // azimuth
+    float phi;    // polar
+  };
 
   void addRange(pcl::PointCloud<LaserScanner::Point> &pc)
   {
@@ -35,16 +41,67 @@ namespace LaserScanner
     }
   }
 
-  std::vector<std::vector<Point *>> getChannels(pcl::PointCloud<LaserScanner::Point> &pc,
-                                                int channels_count)
+  /**
+   * @brief Returns the magnitude of the vector.
+   *
+   * @param p
+   * @return float
+   */
+  float magnitude(pcl::PointXYZ &p)
   {
-    std::vector<std::vector<Point *>> channels(channels_count);
-    for (pcl::PointCloud<Point>::iterator pt = pc.points.begin();
-         pt < pc.points.end(); pt++)
+    return (std::sqrt(p.x * p.x + p.y + p.y + p.z * p.z));
+  }
+
+  /**
+   * @brief Converts a cartesian coordinate (x, y, z) into a spherical one (radius, theta, phi).
+   *
+   * @param pcart
+   * @return PointSphere
+   */
+  PointSphere toSpherical(pcl::PointXYZ &pcart)
+  {
+    PointSphere psphere;
+    psphere.radius = magnitude(pcart);
+    psphere.theta = std::atan2(std::sqrt(pcart.x * pcart.x + pcart.y * pcart.y), pcart.z);
+    psphere.phi = std::atan2(pcart.y, pcart.x);
+    return psphere;
+  }
+
+  /**
+   * @brief Converts a spherical coordinate (radius, theta, phi) into a cartesian one (x, y, z).
+   *
+   * @param psphere
+   * @return pcl::PointXYZ
+   */
+  pcl::PointXYZ toCartesian(PointSphere &psphere)
+  {
+    pcl::PointXYZ pcart;
+    pcart.x = psphere.radius * std::sin(psphere.theta) * std::cos(psphere.phi);
+    pcart.y = psphere.radius * std::sin(psphere.theta) * std::sin(psphere.phi);
+    pcart.z = psphere.radius * std::cos(psphere.theta);
+    return pcart;
+  }
+
+  /**
+   * @brief Project the points in the cloud onto the plane
+   *
+   * @param pc
+   * @param model
+   */
+  void toPlane(pcl::PointCloud<pcl::PointXYZ> &pc, pcl::ModelCoefficients &model)
+  {
+    for (pcl::PointCloud<pcl::PointXYZ>::iterator pt = pc.points.begin(); pt < pc.points.end(); pt++)
     {
-      channels[pt->channel].push_back(&(*pt));
+      PointSphere psphere = toSpherical(*pt);
+      float a, b, c, d;
+      a = model.values[0];
+      b = model.values[1];
+      c = model.values[2];
+      d = model.values[3];
+      psphere.radius = -(d) / (a * std::sin(psphere.theta) * std::cos(psphere.phi) + b * std::sin(psphere.theta) * std::sin(psphere.phi) + c * std::cos(psphere.theta));
+      *pt = toCartesian(psphere);
     }
-    return channels;
+    return;
   }
 
   // all intensities to range min-max
@@ -71,10 +128,7 @@ namespace LaserScanner
 } // namespace LaserScanner
 
 POINT_CLOUD_REGISTER_POINT_STRUCT(LaserScanner::Point,
-                                  (float, x, x)(float, y, y)(float, z, z)(
-                                      float, intensity,
-                                      intensity)(std::uint16_t, channel,
-                                                 channel)(float, range, range))
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(float, range, range))
 
 void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
                         std::vector<pcl::PointXYZ> &v)
