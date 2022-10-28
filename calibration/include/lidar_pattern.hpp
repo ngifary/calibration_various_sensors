@@ -35,40 +35,43 @@ private:
       return a.y > b.y;
     }
   };
-  /* data */
+
   // Pubs Definition
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cumulative_pub, range_pub;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub, rotated_pattern_pub;
-  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
-  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr centers_pub;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cumulative_pub_, range_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub_, rotated_pattern_pub_;
+  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub_;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr centers_pub_;
 
   // Subs Definition
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub;
   rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
-
-  // Node Dynamic parameters
-  double threshold_;
-  double passthrough_radius_min_, passthrough_radius_max_, circle_radius_,
-      centroid_distance_min_, centroid_distance_max_;
-  double delta_width_circles_, delta_height_circles_;
-  Eigen::Vector3f axis_;
-  double angle_threshold_;
-
-  // Non-Dynamic
-  double cluster_tolerance_;
   int clouds_proc_ = 0, clouds_used_ = 0;
-  int min_centers_found_;
-  double plane_threshold_;
-  double gap_threshold_;
-  double plane_distance_inliers_;
-  double circle_threshold_;
-  double target_radius_tolerance_;
-  double min_cluster_factor_;
-  bool skip_warmup_;
-  bool save_to_file_;
+  bool WARMUP_DONE = false;
   std::ofstream savefile;
 
-  bool WARMUP_DONE = false;
+  // Node Parameters
+  // Cloud prefilter parameters
+  double passthrough_radius_min_, passthrough_radius_max_;
+
+  // Hardware parameters
+  double plane_threshold_; // depend on linear resolution
+  double gap_threshold_;   // depend on azimuth resolution (horizontal angular resolution)
+  double line_threshold_;  // depend on polar resolution (vertical angular resolution)
+
+  // Target parameters
+  double circle_radius_, delta_width_circles_, delta_height_circles_; // constant
+  double circle_threshold_, target_radius_tolerance_;
+  Eigen::Vector3f axis_;   // Axis parallel to target
+  double angle_threshold_; // Tilt angle w.r.t axis_
+  int min_centers_found_;
+
+  // Aggregation parameters
+  bool skip_warmup_;
+  double cluster_tolerance_;
+  double min_cluster_factor_;
+
+  // Debug parameters
+  bool save_to_file_;
 };

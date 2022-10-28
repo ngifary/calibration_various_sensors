@@ -5,38 +5,6 @@
 
 #include "mono_qr_pattern.hpp"
 
-namespace
-{
-  const char *about = "Pose estimation using a ArUco Planar Grid board";
-  const char *keys =
-      "{w        |       | Number of squares in X direction }"
-      "{h        |       | Number of squares in Y direction }"
-      "{l        |       | Marker side lenght (in pixels) }"
-      "{s        |       | Separation between two consecutive markers in the grid (in pixels)}"
-      "{d        |       | dictionary: DICT_4X4_50=0, DICT_4X4_100=1, DICT_4X4_250=2,"
-      "DICT_4X4_1000=3, DICT_5X5_50=4, DICT_5X5_100=5, DICT_5X5_250=6, DICT_5X5_1000=7, "
-      "DICT_6X6_50=8, DICT_6X6_100=9, DICT_6X6_250=10, DICT_6X6_1000=11, DICT_7X7_50=12,"
-      "DICT_7X7_100=13, DICT_7X7_250=14, DICT_7X7_1000=15, DICT_ARUCO_ORIGINAL = 16}"
-      "{c        |       | Output file with calibrated camera parameters }"
-      "{v        |       | Input from video file, if ommited, input comes from camera }"
-      "{ci       | 0     | Camera id if input doesnt come from video (-v) }"
-      "{dp       |       | File of marker detector parameters }"
-      "{rs       |       | Apply refind strategy }"
-      "{r        |       | show rejected candidates too }";
-}
-
-/**
- */
-static bool readCameraParameters(std::string filename, cv::Mat &camMatrix, cv::Mat &distCoeffs)
-{
-  cv::FileStorage fs(filename, cv::FileStorage::READ);
-  if (!fs.isOpened())
-    return false;
-  fs["camera_matrix"] >> camMatrix;
-  fs["distortion_coefficients"] >> distCoeffs;
-  return true;
-}
-
 /**
  */
 static bool readDetectorParameters(std::string filename, cv::Ptr<cv::aruco::DetectorParameters> &params)
@@ -146,6 +114,11 @@ MonoQRPattern::~MonoQRPattern()
 void MonoQRPattern::initializeParams()
 {
   rcl_interfaces::msg::ParameterDescriptor desc;
+
+  desc.name = "config_file";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
+  desc.description = "Parameter config file for detecting ArUco";
+  config_file_ = declare_parameter(desc.name, "detector_params");
 
   desc.name = "delta_width_circles";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -350,14 +323,16 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
 
   cv::Ptr<cv::aruco::DetectorParameters> parameters =
       cv::aruco::DetectorParameters::create();
-  // set tp use corner refinement for accuracy, values obtained
-  // for pixel coordinates are more accurate than the nearest pixel
 
-#if (CV_MAJOR_VERSION == 3 && CV_MINOR_VERSION <= 2) || CV_MAJOR_VERSION < 3
-  parameters->doCornerRefinement = true;
-#else
+  // Get config file
+  std::string config_path = ament_index_cpp::get_package_share_directory("calibration") + "/config/" + config_file_ + ".yaml";
+  bool readOk = readDetectorParameters(config_path, parameters);
+  if (!readOk)
+  {
+    RCLCPP_WARN(get_logger(), "Invalid detector parameters file");
+    return;
+  }
   parameters->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
-#endif
 
   // Detect markers
   std::vector<int> ids;
@@ -420,14 +395,9 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
     pcl::PointCloud<pcl::PointXYZ>::Ptr candidates_cloud(
         new pcl::PointCloud<pcl::PointXYZ>);
 
-// Estimate 3D position of the board using detected markers
-#if (CV_MAJOR_VERSION == 3 && CV_MINOR_VERSION <= 2) || CV_MAJOR_VERSION < 3
-    int valid = cv::aruco::estimatePoseBoard(corners, ids, board, cameraMatrix,
-                                             distCoeffs, rvec, tvec);
-#else
+    // Estimate 3D position of the board using detected markers
     int valid = cv::aruco::estimatePoseBoard(corners, ids, board, cameraMatrix,
                                              distCoeffs, rvec, tvec, true);
-#endif
 
     cv::aruco::drawAxis(imageCopy, cameraMatrix, distCoeffs, rvec, tvec, 0.2);
 

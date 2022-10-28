@@ -97,16 +97,16 @@ def generate_launch_description():
             ('centers_cloud', ['/lidar_pattern_', sensor_id, '/centers_cloud'])
         ],
         parameters=[{
-            'passthrough_radius_min': 1.5,
-            'passthrough_radius_max': 1.7,
+            'passthrough_radius_min': 1.0,
+            'passthrough_radius_max': 7.0,
             'plane_threshold': 0.1,
             'angle_threshold': 0.55,
-            'gap_threshold': 0.01,
-            'circle_threshold': 0.005,
-            'circle_radius': 0.03,
-            'target_radius_tolerance': 0.005,
-            'delta_width_circles': 0.14,
-            'delta_height_circles': 0.09,
+            'gap_threshold': 0.03,
+            'circle_threshold': 0.05,
+            'circle_radius': 0.12,
+            'target_radius_tolerance': 0.01,
+            'delta_width_circles': 0.5,
+            'delta_height_circles': 0.4,
             'save_to_file': False
         }],
         output=stdout

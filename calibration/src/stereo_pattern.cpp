@@ -98,6 +98,11 @@ void StereoPattern::initializeParams()
   desc.description = "";
   circle_threshold_ = declare_parameter(desc.name, 0.05);
 
+  desc.name = "circle_radius";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "Radius of pattern's circles";
+  circle_radius_ = declare_parameter(desc.name, 0.12);
+
   desc.name = "target_radius_tolerance";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
@@ -234,8 +239,8 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
   seg.setMethodType(pcl::SAC_RANSAC);
   seg.setOptimizeCoefficients(true);
   seg.setMaxIterations(1000);
-  seg.setRadiusLimits(TARGET_RADIUS - target_radius_tolerance_,
-                      TARGET_RADIUS + target_radius_tolerance_);
+  seg.setRadiusLimits(circle_radius_ - target_radius_tolerance_,
+                      circle_radius_ + target_radius_tolerance_);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr circle_cloud(
       new pcl::PointCloud<pcl::PointXYZ>);
@@ -488,6 +493,11 @@ rcl_interfaces::msg::SetParametersResult StereoPattern::param_callback(const std
   result.reason = "success";
   for (const auto &param : parameters)
   {
+    if (param.get_name() == "circle_radius")
+    {
+      circle_radius_ = param.as_double();
+      RCLCPP_INFO(this->get_logger(), "[%s] New pattern circle radius: %f", get_name(), circle_radius_);
+    }
     if (param.get_name() == "circle_threshold")
     {
       circle_threshold_ = param.as_double();

@@ -3,6 +3,7 @@
   the ArUco markers
 */
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "image_geometry/pinhole_camera_model.h"
 #include "message_filters/subscriber.h"
@@ -24,48 +25,51 @@
 class MonoQRPattern : public rclcpp::Node
 {
 public:
-    MonoQRPattern();
-    ~MonoQRPattern();
+  MonoQRPattern();
+  ~MonoQRPattern();
 
 private:
-    void initializeParams();
-    cv::Point2f projectPointDist(cv::Point3f pt_cv, const cv::Mat intrinsics, const cv::Mat distCoeffs);
-    Eigen::Vector3f mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud);
-    Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, Eigen::Vector3f means);
-    void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg, const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info);
-    rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
-    void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
+  void initializeParams();
+  cv::Point2f projectPointDist(cv::Point3f pt_cv, const cv::Mat intrinsics, const cv::Mat distCoeffs);
+  Eigen::Vector3f mean(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud);
+  Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, Eigen::Vector3f means);
+  void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg, const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info);
+  rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
+  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud_;
-    cv::Ptr<cv::aruco::Dictionary> dictionary_;
+  // Pubs Definition
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_, cumulative_pub_;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub_;
 
-    // Pubs Definition
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_, cumulative_pub_;
-    rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub_;
+  // Subs Definition
+  message_filters::Subscriber<sensor_msgs::msg::Image> image_sub_;
+  message_filters::Subscriber<sensor_msgs::msg::CameraInfo> cinfo_sub_;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub_;
 
-    // Subs Definition
-    message_filters::Subscriber<sensor_msgs::msg::Image> image_sub_;
-    message_filters::Subscriber<sensor_msgs::msg::CameraInfo> cinfo_sub_;
-    rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub_;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud_;
+  cv::Ptr<cv::aruco::Dictionary> dictionary_;
+  /** \brief Synchronized image and camera info.*/
+  std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>>> sync_;
+  /** \brief The maximum queue size (default: 3). */
+  int max_queue_size_ = 3;
+  int frames_proc_ = 0, frames_used_ = 0;
+  bool WARMUP_DONE = false;
+  std::ofstream savefile_;
 
-    /** \brief Synchronized image and camera info.*/
-    std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>>> sync_;
-    /** \brief The maximum queue size (default: 3). */
-    int max_queue_size_ = 3;
+  // Node Parameters
+  // Target parameters
+  double marker_size_, delta_width_qr_center_, delta_height_qr_center_;
+  double delta_width_circles_, delta_height_circles_;
 
-    // ROS params
-    double marker_size_, delta_width_qr_center_, delta_height_qr_center_;
-    double delta_width_circles_, delta_height_circles_;
-    unsigned min_detected_markers_;
-    int frames_proc_ = 0, frames_used_ = 0;
-    double cluster_tolerance_;
-    double min_cluster_factor_;
+  // Algorithm parameters
+  unsigned min_detected_markers_;
+  std::string config_file_;
 
-    bool WARMUP_DONE = false;
+  // Aggregation parameters
+  bool skip_warmup_;
+  double cluster_tolerance_;
+  double min_cluster_factor_;
 
-    bool skip_warmup_;
-    bool save_to_file_;
-    std::ofstream savefile_;
-
-protected:
+  // Debug parameters
+  bool save_to_file_;
 };

@@ -13,15 +13,15 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
 
   pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
 
-  range_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("range_filtered_cloud", 1);
+  range_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("range_filtered_cloud", 1);
   if (DEBUG)
   {
-    pattern_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
-    rotated_pattern_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
-    cumulative_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
+    pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
+    rotated_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
+    cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
   }
-  centers_pub = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
-  coeff_pub = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
+  centers_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
 
   std::string csv_name;
 
@@ -106,25 +106,38 @@ void LidarPattern::initializeParams()
   desc.description = "Max radius for passthrough";
   passthrough_radius_max_ = declare_parameter(desc.name, 6.0);
 
-  desc.name = "centroid_distance_min";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "Min distance to the centroid";
-  centroid_distance_min_ = declare_parameter(desc.name, 0.15);
-
-  desc.name = "centroid_distance_max";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "Max distance to the centroid";
-  centroid_distance_max_ = declare_parameter(desc.name, 0.8);
-
   desc.name = "delta_width_circles";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "distance from left circles centre to right circles centre (m)";
   delta_width_circles_ = declare_parameter(desc.name, 0.5);
 
-  desc.name = "delta_height_circles_";
+  desc.name = "delta_height_circles";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "distance from top circles centre to bottom circles centre (m)";
   delta_height_circles_ = declare_parameter(desc.name, 0.4);
+
+  // desc.name = "theta";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "The vertical angular resolution (polar resolution) of the LiDAR (deg)";
+  // desc.read_only = true;
+  // theta_ = declare_parameter(desc.name, 0.625);
+
+  // desc.name = "phi";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "The horizontal angular resolution (azimuth resolution) of the LiDAR (deg)";
+  // desc.read_only = true;
+  // phi_ = declare_parameter(desc.name, 0.13);
+
+  // desc.name = "radius";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "The linear resolution of the LiDAR (m)";
+  // desc.read_only = true;
+  // radius_ = declare_parameter(desc.name, 0.625);
+
+  desc.name = "line_threshold";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  desc.description = "Line threshold for line segmentation (m)";
+  line_threshold_ = declare_parameter(desc.name, 0.005);
 
   desc.name = "plane_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -135,11 +148,6 @@ void LidarPattern::initializeParams()
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
   gap_threshold_ = declare_parameter(desc.name, 0.01);
-
-  desc.name = "plane_distance_inliers";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "";
-  plane_distance_inliers_ = declare_parameter(desc.name, 0.1);
 
   desc.name = "circle_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -204,7 +212,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   sensor_msgs::msg::PointCloud2 range_ros;
   pcl::toROSMsg(*laser_filtered, range_ros);
   range_ros.header = laser_cloud->header;
-  range_pub->publish(range_ros);
+  range_pub_->publish(range_ros);
 
   // Plane segmentation
   pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -252,15 +260,6 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
       cloud_f_sorted(new pcl::PointCloud<pcl::PointXYZ>),
       centroid_candidates(new pcl::PointCloud<pcl::PointXYZ>);
 
-  // Publishing "pattern_circles" cloud (points belonging to the detected plane)
-  if (DEBUG)
-  {
-    sensor_msgs::msg::PointCloud2 lasercloud_ros2;
-    pcl::toROSMsg(*plane_cloud, lasercloud_ros2);
-    lasercloud_ros2.header = laser_cloud->header;
-    pattern_pub->publish(lasercloud_ros2);
-  }
-
   // Rotate cloud to face pattern plane
   Eigen::Vector3f xy_plane_normal_vector, floor_plane_normal_vector;
   xy_plane_normal_vector[0] = 0.0;
@@ -282,7 +281,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     sensor_msgs::msg::PointCloud2 ros_rotated_pattern;
     pcl::toROSMsg(*xy_cloud, ros_rotated_pattern);
     ros_rotated_pattern.header = laser_cloud->header;
-    rotated_pattern_pub->publish(ros_rotated_pattern);
+    rotated_pattern_pub_->publish(ros_rotated_pattern);
   }
 
   double zcoord_xyplane = xy_cloud->at(0).z;
@@ -293,7 +292,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
 
   pcl::SACSegmentation<pcl::PointXYZ> line_segmentation;
   line_segmentation.setModelType(pcl::SACMODEL_LINE);
-  line_segmentation.setDistanceThreshold(0.005);
+  line_segmentation.setDistanceThreshold(line_threshold_);
   line_segmentation.setMethodType(pcl::SAC_RANSAC);
   line_segmentation.setMaxIterations(1000);
 
@@ -351,6 +350,15 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     return;
   }
 
+  // Publishing "pattern_circles" cloud (points belonging to the detected plane)
+  if (DEBUG)
+  {
+    sensor_msgs::msg::PointCloud2 lasercloud_ros2;
+    pcl::toROSMsg(*edges_cloud, lasercloud_ros2);
+    lasercloud_ros2.header = laser_cloud->header;
+    pattern_pub_->publish(lasercloud_ros2);
+  }
+
   // RANSAC circle detection
   pcl::ModelCoefficients::Ptr coefficients3(new pcl::ModelCoefficients);
   pcl::PointIndices::Ptr inliers3(new pcl::PointIndices);
@@ -365,10 +373,14 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
       circle_radius_ - target_radius_tolerance_,
       circle_radius_ + target_radius_tolerance_);
 
-  pcl::ExtractIndices<pcl::PointXYZ> extract;
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in cloud of size %lu",
                 get_name(), edges_cloud->points.size());
+  if (edges_cloud->points.size() > 20)
+  {
+    RCLCPP_INFO(get_logger(), "[%s] Too much points in cloud. Please adjust gap_threshold", get_name());
+    return;
+  }
   while (edges_cloud->points.size() > 3)
   {
     circle_segmentation.setInputCloud(xy_cloud);
@@ -406,7 +418,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     extract.setIndices(inliers3);
     extract.setNegative(true);
     extract.filter(*cloud_f);
-    xy_cloud.swap(cloud_f);
+    edges_cloud.swap(cloud_f);
 
     if (DEBUG)
       RCLCPP_INFO(this->get_logger(), "[%s] Remaining points in cloud %lu",
@@ -522,7 +534,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     sensor_msgs::msg::PointCloud2 ros_pointcloud;
     pcl::toROSMsg(*cumulative_cloud, ros_pointcloud);
     ros_pointcloud.header = laser_cloud->header;
-    cumulative_pub->publish(ros_pointcloud);
+    cumulative_pub_->publish(ros_pointcloud);
   }
 
   xy_cloud.reset(); // Free memory
@@ -534,7 +546,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   pcl_msgs::msg::ModelCoefficients m_coeff;
   pcl_conversions::moveFromPCL(*coefficients, m_coeff);
   m_coeff.header = laser_cloud->header;
-  coeff_pub->publish(m_coeff);
+  coeff_pub_->publish(m_coeff);
 
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] %d/%d frames: %ld pts in cloud", get_name(), clouds_used_,
@@ -573,10 +585,10 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     to_send.cluster_iterations = clouds_used_;
     to_send.total_iterations = clouds_proc_;
     to_send.cloud = ros2_pointcloud;
+    centers_pub_->publish(to_send);
 
-    centers_pub->publish(to_send);
     if (DEBUG)
-      RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published");
+      RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published.", get_name());
 
     if (save_to_file_)
     {
@@ -651,22 +663,15 @@ rcl_interfaces::msg::SetParametersResult LidarPattern::param_callback(const std:
       RCLCPP_INFO(this->get_logger(), "[%s] New normal axis for plane segmentation: %f, %f, %f",
                   get_name(), axis_[0], axis_[1], axis_[2]);
     }
+    if (param.get_name() == "gap_threshold")
+    {
+      gap_threshold_ = param.as_double();
+      RCLCPP_INFO(this->get_logger(), "[%s] New angle threshold: %f", get_name(), gap_threshold_);
+    }
     if (param.get_name() == "angle_threshold")
     {
       angle_threshold_ = param.as_double();
       RCLCPP_INFO(this->get_logger(), "[%s] New angle threshold: %f", get_name(), angle_threshold_);
-    }
-    if (param.get_name() == "centroid_distance_min")
-    {
-      centroid_distance_min_ = param.as_double();
-      RCLCPP_INFO(this->get_logger(), "[%s] New minimum distance between centroids: %f",
-                  get_name(), centroid_distance_min_);
-    }
-    if (param.get_name() == "centroid_distance_max")
-    {
-      centroid_distance_max_ = param.as_double();
-      RCLCPP_INFO(this->get_logger(), "[%s] New maximum distance between centroids: %f",
-                  get_name(), centroid_distance_max_);
     }
   }
   return result;
