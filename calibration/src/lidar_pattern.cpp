@@ -8,8 +8,8 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
 {
   RCLCPP_INFO(this->get_logger(), "[%s] Starting....", get_name());
 
-  sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-      "cloud1", 100, std::bind(&LidarPattern::callback, this, std::placeholders::_1));
+  sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+      "cloud1", 10, std::bind(&LidarPattern::callback, this, std::placeholders::_1));
 
   pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
 
@@ -18,9 +18,10 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
   {
     pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
     rotated_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
-    cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
+    // cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud_", 1);
   }
-  centers_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  // centers_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
   coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
 
   std::string csv_name;
@@ -29,37 +30,37 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
 
   csv_name = this->declare_parameter("csv_name", "lidar_pattern_" + currentDateTime() + ".csv");
 
-  cumulative_cloud =
-      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  // cumulative_cloud_ =
+  //     pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
   auto ret = this->add_on_set_parameters_callback(std::bind(&LidarPattern::param_callback, this, std::placeholders::_1));
 
-  warmup_sub = this->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 100, std::bind(&LidarPattern::warmup_callback, this, std::placeholders::_1));
+  // warmup_sub_ = this->create_subscription<std_msgs::msg::Empty>(
+  //     "warmup_switch", 100, std::bind(&LidarPattern::warmup_callback, this, std::placeholders::_1));
 
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
+  // if (skip_warmup_)
+  // {
+  //   RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+  //   WARMUP_DONE = true;
+  // }
 
-  // Just for statistics
-  if (save_to_file_)
-  {
-    std::ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
-      savefile.open(os.str().c_str());
-      savefile << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << std::endl;
-    }
-  }
+  // // Just for statistics
+  // if (save_to_file_)
+  // {
+  //   std::ostringstream os;
+  //   os << getenv("HOME") << "/l2c_experiments/" << csv_name;
+  //   if (save_to_file_)
+  //   {
+  //     if (DEBUG)
+  //       RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+  //     savefile_.open(os.str().c_str());
+  //     savefile_ << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+  //                 "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+  //                 "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+  //                 "cent3_z, cent4_x, cent4_y, cent4_z, it"
+  //              << std::endl;
+  //   }
+  // }
 }
 
 LidarPattern::~LidarPattern()
@@ -159,30 +160,25 @@ void LidarPattern::initializeParams()
   desc.description = "";
   target_radius_tolerance_ = declare_parameter(desc.name, 0.01);
 
-  desc.name = "min_centers_found";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
-  desc.description = "minimum circle to be detected (-)";
-  min_centers_found_ = declare_parameter(desc.name, TARGET_NUM_CIRCLES);
+  // desc.name = "cluster_tolerance";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "maximal distance to still be included in a cluster (m)";
+  // cluster_tolerance_ = declare_parameter(desc.name, 0.05);
 
-  desc.name = "cluster_tolerance";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "maximal distance to still be included in a cluster (m)";
-  cluster_tolerance_ = declare_parameter(desc.name, 0.05);
+  // desc.name = "min_cluster_factor";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "minimum cluster size to frame ratio (-)";
+  // min_cluster_factor_ = declare_parameter(desc.name, 0.5);
 
-  desc.name = "min_cluster_factor";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "minimum cluster size to frame ratio (-)";
-  min_cluster_factor_ = declare_parameter(desc.name, 0.5);
+  // desc.name = "skip_warmup";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "skip warmup";
+  // skip_warmup_ = declare_parameter(desc.name, false);
 
-  desc.name = "skip_warmup";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "skip warmup";
-  skip_warmup_ = declare_parameter(desc.name, false);
-
-  desc.name = "save_to_file";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "save result to a file";
-  save_to_file_ = declare_parameter(desc.name, false);
+  // desc.name = "save_to_file";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "save result to a file";
+  // save_to_file_ = declare_parameter(desc.name, false);
 }
 
 void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser_cloud)
@@ -194,7 +190,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
       laser_filtered(new pcl::PointCloud<LaserScanner::Point>),
       pattern_cloud(new pcl::PointCloud<LaserScanner::Point>);
 
-  clouds_proc_++;
+  // clouds_proc_++;
 
   // This cloud is already xyz-filtered
   fromROSMsg(*laser_cloud, *lasercloud);
@@ -514,33 +510,33 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
                             coefficients->values[0];
 
     rotated_back_cloud->push_back(center_rotated_back);
-    cumulative_cloud->push_back(center_rotated_back);
+    // cumulative_cloud_->push_back(center_rotated_back);
   }
 
-  if (save_to_file_)
-  {
-    std::vector<pcl::PointXYZ> sorted_centers;
-    sortPatternCenters(rotated_back_cloud, sorted_centers);
-    for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-         it < sorted_centers.end(); ++it)
-    {
-      savefile << it->x << ", " << it->y << ", " << it->z << ", ";
-    }
-  }
+  // if (save_to_file_)
+  // {
+  //   std::vector<pcl::PointXYZ> sorted_centers;
+  //   sortPatternCenters(rotated_back_cloud, sorted_centers);
+  //   for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+  //        it < sorted_centers.end(); ++it)
+  //   {
+  //     savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+  //   }
+  // }
 
-  // Publishing "cumulative_cloud" cloud (centers found from the beginning)
-  if (DEBUG)
-  {
-    sensor_msgs::msg::PointCloud2 ros_pointcloud;
-    pcl::toROSMsg(*cumulative_cloud, ros_pointcloud);
-    ros_pointcloud.header = laser_cloud->header;
-    cumulative_pub_->publish(ros_pointcloud);
-  }
+  // // Publishing "cumulative_cloud_" cloud (centers found from the beginning)
+  // if (DEBUG)
+  // {
+  //   sensor_msgs::msg::PointCloud2 ros_pointcloud;
+  //   pcl::toROSMsg(*cumulative_cloud_, ros_pointcloud);
+  //   ros_pointcloud.header = laser_cloud->header;
+  //   cumulative_pub_->publish(ros_pointcloud);
+  // }
 
   xy_cloud.reset(); // Free memory
   cloud_f.reset();  // Free memory
 
-  ++clouds_used_;
+  // ++clouds_used_;
 
   // Publishing "plane_model"
   pcl_msgs::msg::ModelCoefficients m_coeff;
@@ -548,77 +544,93 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   m_coeff.header = laser_cloud->header;
   coeff_pub_->publish(m_coeff);
 
-  if (DEBUG)
-    RCLCPP_INFO(this->get_logger(), "[%s] %d/%d frames: %ld pts in cloud", get_name(), clouds_used_,
-                clouds_proc_, cumulative_cloud->points.size());
+  // if (DEBUG)
+  //   RCLCPP_INFO(this->get_logger(), "[%s] %d/%d frames: %ld pts in cloud", get_name(), clouds_used_,
+  //               clouds_proc_, cumulative_cloud_->points.size());
 
-  // Create cloud for publishing centers
-  pcl::PointCloud<pcl::PointXYZ>::Ptr centers_cloud(
-      new pcl::PointCloud<pcl::PointXYZ>);
+  // // Create cloud for publishing centers
+  // pcl::PointCloud<pcl::PointXYZ>::Ptr centers_cloud(
+  //     new pcl::PointCloud<pcl::PointXYZ>);
 
-  // Compute circles centers
-  if (!WARMUP_DONE)
-  { // Compute clusters from detections in the latest frame
-    getCenterClusters(cumulative_cloud, centers_cloud, cluster_tolerance_, 1,
-                      1);
-  }
-  else
-  { // Use cumulative information from previous frames
-    getCenterClusters(cumulative_cloud, centers_cloud, cluster_tolerance_,
-                      min_cluster_factor_ * clouds_used_, clouds_used_);
-    if (centers_cloud->points.size() > TARGET_NUM_CIRCLES)
-    {
-      getCenterClusters(cumulative_cloud, centers_cloud, cluster_tolerance_,
-                        3.0 * clouds_used_ / 4.0, clouds_used_);
-    }
-  }
+  // // Compute circles centers
+  // if (!WARMUP_DONE)
+  // { // Compute clusters from detections in the latest frame
+  //   getCenterClusters(cumulative_cloud_, centers_cloud, cluster_tolerance_, 1,
+  //                     1);
+  // }
+  // else
+  // { // Use cumulative information from previous frames
+  //   getCenterClusters(cumulative_cloud_, centers_cloud, cluster_tolerance_,
+  //                     min_cluster_factor_ * clouds_used_, clouds_used_);
+  //   if (centers_cloud->points.size() > TARGET_NUM_CIRCLES)
+  //   {
+  //     getCenterClusters(cumulative_cloud_, centers_cloud, cluster_tolerance_,
+  //                       3.0 * clouds_used_ / 4.0, clouds_used_);
+  //   }
+  // }
 
-  // Exit 6: clustering failed
-  if (centers_cloud->points.size() == TARGET_NUM_CIRCLES)
+  if (rotated_back_cloud->points.size() == TARGET_NUM_CIRCLES)
   {
     sensor_msgs::msg::PointCloud2 ros2_pointcloud;
-    pcl::toROSMsg(*centers_cloud, ros2_pointcloud);
+    pcl::toROSMsg(*rotated_back_cloud, ros2_pointcloud);
     ros2_pointcloud.header = laser_cloud->header;
-
-    calibration_interfaces::msg::ClusterCentroids to_send;
-    to_send.header = laser_cloud->header;
-    to_send.cluster_iterations = clouds_used_;
-    to_send.total_iterations = clouds_proc_;
-    to_send.cloud = ros2_pointcloud;
-    centers_pub_->publish(to_send);
+    centers_pub_->publish(ros2_pointcloud);
 
     if (DEBUG)
       RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published.", get_name());
-
-    if (save_to_file_)
-    {
-      std::vector<pcl::PointXYZ> sorted_centers;
-      sortPatternCenters(centers_cloud, sorted_centers);
-      for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-           it < sorted_centers.end(); ++it)
-      {
-        savefile << it->x << ", " << it->y << ", " << it->z << ", ";
-      }
-      savefile << cumulative_cloud->width;
-    }
   }
   else
   {
     RCLCPP_ERROR(this->get_logger(), "Not enough circle found");
   }
 
-  if (save_to_file_)
-  {
-    savefile << std::endl;
-  }
+  // // Exit 6: clustering failed
+  // if (centers_cloud->points.size() == TARGET_NUM_CIRCLES)
+  // {
+  //   sensor_msgs::msg::PointCloud2 ros2_pointcloud;
+  //   pcl::toROSMsg(*centers_cloud, ros2_pointcloud);
+  //   ros2_pointcloud.header = laser_cloud->header;
+  //   centers_pub_->publish(ros2_pointcloud);
 
-  // Clear cumulative cloud during warm-up phase
-  if (!WARMUP_DONE)
-  {
-    cumulative_cloud->clear();
-    clouds_proc_ = 0;
-    clouds_used_ = 0;
-  }
+  //   calibration_interfaces::msg::ClusterCentroids to_send;
+  //   to_send.header = laser_cloud->header;
+  //   to_send.cluster_iterations = clouds_used_;
+  //   to_send.total_iterations = clouds_proc_;
+  //   to_send.cloud = ros2_pointcloud;
+  //   centers_pub_->publish(to_send);
+
+  //   if (DEBUG)
+  //     RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published.", get_name());
+
+  //   if (save_to_file_)
+  //   {
+  //     std::vector<pcl::PointXYZ> sorted_centers;
+  //     sortPatternCenters(centers_cloud, sorted_centers);
+  //     for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+  //          it < sorted_centers.end(); ++it)
+  //     {
+  //       savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+  //     }
+  //     savefile_ << cumulative_cloud_->width;
+  //   }
+  // }
+  // else
+  // {
+  //   RCLCPP_ERROR(this->get_logger(), "Not enough circle found");
+  // }
+
+  // if (save_to_file_)
+  // {
+  //   savefile_ << std::endl;
+  // }
+
+  // // Clear cumulative cloud during warm-up phase
+  // if (!WARMUP_DONE)
+  // {
+  //   cumulative_cloud_->clear();
+  //   clouds_proc_ = 0;
+  //   clouds_used_ = 0;
+  // }
 }
 
 rcl_interfaces::msg::SetParametersResult LidarPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
@@ -677,18 +689,18 @@ rcl_interfaces::msg::SetParametersResult LidarPattern::param_callback(const std:
   return result;
 }
 
-void LidarPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
-{
-  WARMUP_DONE = !WARMUP_DONE;
-  if (WARMUP_DONE)
-  {
-    RCLCPP_INFO(this->get_logger(), "[%s] Warm up done, pattern detection started", get_name());
-  }
-  else
-  {
-    RCLCPP_INFO(this->get_logger(), "[%s] Detection stopped. Warm up mode activated", get_name());
-  }
-}
+// void LidarPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
+// {
+//   WARMUP_DONE = !WARMUP_DONE;
+//   if (WARMUP_DONE)
+//   {
+//     RCLCPP_INFO(this->get_logger(), "[%s] Warm up done, pattern detection started", get_name());
+//   }
+//   else
+//   {
+//     RCLCPP_INFO(this->get_logger(), "[%s] Detection stopped. Warm up mode activated", get_name());
+//   }
+// }
 
 int main(int argc, char **argv)
 {

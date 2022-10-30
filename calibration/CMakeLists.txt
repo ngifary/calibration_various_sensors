@@ -36,13 +36,13 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-include_directories(include cfg)
-
-# create ament index resource which references the libraries in the binary dir
-set(node_plugins "")
+include_directories(include)
 
 add_executable(laser2cam_calibration src/laser2cam_calibration.cpp)
 ament_target_dependencies(laser2cam_calibration rclcpp cv_bridge sensor_msgs std_msgs std_srvs OpenCV pcl_ros image_geometry image_transport message_filters stereo_msgs tf2_geometry_msgs tf2 rcl_interfaces calibration_interfaces TinyXML2)
+
+add_executable(sngs_calibration src/sngs_calibration.cpp)
+ament_target_dependencies(sngs_calibration rclcpp cv_bridge sensor_msgs std_msgs std_srvs OpenCV pcl_ros image_geometry image_transport message_filters stereo_msgs tf2_geometry_msgs tf2 rcl_interfaces calibration_interfaces TinyXML2)
 
 add_executable(lidar_pattern src/lidar_pattern.cpp)
 ament_target_dependencies(lidar_pattern rclcpp sensor_msgs std_msgs pcl_ros tf2_geometry_msgs tf2 calibration_interfaces)
@@ -59,13 +59,19 @@ ament_target_dependencies(stereo_pattern rclcpp message_filters pcl_ros sensor_m
 add_executable(plane_segmentation src/plane.cpp)
 ament_target_dependencies(plane_segmentation rclcpp pcl_ros sensor_msgs)
 
+add_executable(overlay_image src/overlay_image.cpp)
+ament_target_dependencies(overlay_image rclcpp pcl_ros sensor_msgs pcl_ros tf2_geometry_msgs tf2 cv_bridge OpenCV image_transport)
+
+
 install(TARGETS
   laser2cam_calibration
+  sngs_calibration
   lidar_pattern
   mono_qr_pattern
   disp_masker
   stereo_pattern
   plane_segmentation
+  overlay_image
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY 

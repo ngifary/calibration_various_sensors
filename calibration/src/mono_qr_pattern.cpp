@@ -42,15 +42,16 @@ MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
   // Initialize QR dictionary
   dictionary_ = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
 
-  cumulative_cloud_ =
-      pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  // cumulative_cloud_ =
+  //     pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
   if (DEBUG)
   {
-    qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
+    // qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
     centers_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_pts_cloud", 1);
-    cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
+    // cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
   }
+  qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
   clusters_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
 
   initializeParams();
@@ -78,32 +79,32 @@ MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
   // ROS param callback
   auto ret = this->add_on_set_parameters_callback(std::bind(&MonoQRPattern::param_callback, this, std::placeholders::_1));
 
-  warmup_sub_ = this->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 100, std::bind(&MonoQRPattern::warmup_callback, this, std::placeholders::_1));
+  // warmup_sub_ = this->create_subscription<std_msgs::msg::Empty>(
+  //     "warmup_switch", 100, std::bind(&MonoQRPattern::warmup_callback, this, std::placeholders::_1));
 
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
+  // if (skip_warmup_)
+  // {
+  //   RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+  //   WARMUP_DONE = true;
+  // }
 
-  // Just for statistics
-  if (save_to_file_)
-  {
-    std::ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
-      savefile_.open(os.str().c_str());
-      savefile_ << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                   "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                   "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                   "cent3_z, cent4_x, cent4_y, cent4_z, it"
-                << std::endl;
-    }
-  }
+  // // Just for statistics
+  // if (save_to_file_)
+  // {
+  //   std::ostringstream os;
+  //   os << getenv("HOME") << "/v2c_experiments/" << csv_name;
+  //   if (save_to_file_)
+  //   {
+  //     if (DEBUG)
+  //       RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+  //     savefile_.open(os.str().c_str());
+  //     savefile_ << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+  //                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+  //                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+  //                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
+  //               << std::endl;
+  //   }
+  // }
 }
 
 MonoQRPattern::~MonoQRPattern()
@@ -150,25 +151,25 @@ void MonoQRPattern::initializeParams()
   desc.description = "minimum marker to be detected (-)";
   min_detected_markers_ = declare_parameter(desc.name, 3);
 
-  desc.name = "cluster_tolerance";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "maximal distance to still be included in a cluster (m)";
-  cluster_tolerance_ = declare_parameter(desc.name, 0.05);
+  // desc.name = "cluster_tolerance";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "maximal distance to still be included in a cluster (m)";
+  // cluster_tolerance_ = declare_parameter(desc.name, 0.05);
 
-  desc.name = "min_cluster_factor";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "minimum cluster size to frame ratio (-)";
-  min_cluster_factor_ = declare_parameter(desc.name, 2.0 / 3.0);
+  // desc.name = "min_cluster_factor";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "minimum cluster size to frame ratio (-)";
+  // min_cluster_factor_ = declare_parameter(desc.name, 2.0 / 3.0);
 
-  desc.name = "skip_warmup";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "skip warmup";
-  skip_warmup_ = declare_parameter(desc.name, false);
+  // desc.name = "skip_warmup";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "skip warmup";
+  // skip_warmup_ = declare_parameter(desc.name, false);
 
-  desc.name = "save_to_file";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "save result to a file";
-  save_to_file_ = declare_parameter(desc.name, false);
+  // desc.name = "save_to_file";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "save result to a file";
+  // save_to_file_ = declare_parameter(desc.name, false);
 }
 
 cv::Point2f MonoQRPattern::projectPointDist(cv::Point3f pt_cv, const cv::Mat intrinsics, const cv::Mat distCoeffs)
@@ -176,8 +177,7 @@ cv::Point2f MonoQRPattern::projectPointDist(cv::Point3f pt_cv, const cv::Mat int
   // Project a 3D point taking into account distortion
   std::vector<cv::Point3f> input{pt_cv};
   std::vector<cv::Point2f> projectedPoints;
-  projectedPoints.resize(
-      1); // TODO: Do it batched? (cv::circle is not batched anyway)
+  projectedPoints.resize(1);
   projectPoints(input, cv::Mat::zeros(3, 1, CV_64FC1), cv::Mat::zeros(3, 1, CV_64FC1),
                 intrinsics, distCoeffs, projectedPoints);
   return projectedPoints[0];
@@ -231,7 +231,7 @@ MonoQRPattern::covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, 
 void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg,
                                   const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info)
 {
-  frames_proc_++;
+  // frames_proc_++;
 
   // Convert message to a matrix
   cv_bridge::CvImageConstPtr cv_img_ptr;
@@ -519,28 +519,28 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
           candidates_cloud->at(groups[best_candidate_idx][j]));
     }
 
-    // Add centers to cumulative for further clustering
-    for (unsigned i = 0; i < centers_cloud->size(); i++)
-    {
-      cumulative_cloud_->push_back(centers_cloud->at(i));
-    }
-    frames_used_++;
-    if (DEBUG)
-    {
-      RCLCPP_INFO(get_logger(), "[%s] %d/%d frames: %ld pts in cloud", get_name(), frames_used_,
-                  frames_proc_, cumulative_cloud_->points.size());
-    }
+    // // Add centers to cumulative for further clustering
+    // for (unsigned i = 0; i < centers_cloud->size(); i++)
+    // {
+    //   cumulative_cloud_->push_back(centers_cloud->at(i));
+    // }
+    // frames_used_++;
+    // if (DEBUG)
+    // {
+    //   RCLCPP_INFO(get_logger(), "[%s] %d/%d frames: %ld pts in cloud", get_name(), frames_used_,
+    //               frames_proc_, cumulative_cloud_->points.size());
+    // }
 
-    if (save_to_file_)
-    {
-      std::vector<pcl::PointXYZ> sorted_centers;
-      sortPatternCenters(centers_cloud, sorted_centers);
-      for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-           it < sorted_centers.end(); ++it)
-      {
-        savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
-      }
-    }
+    // if (save_to_file_)
+    // {
+    //   std::vector<pcl::PointXYZ> sorted_centers;
+    //   sortPatternCenters(centers_cloud, sorted_centers);
+    //   for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+    //        it < sorted_centers.end(); ++it)
+    //   {
+    //     savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+    //   }
+    // }
 
     if (DEBUG)
     { // Draw centers
@@ -554,75 +554,90 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
       }
     }
 
-    // Compute centers clusters
-    pcl::PointCloud<pcl::PointXYZ>::Ptr clusters_cloud(
-        new pcl::PointCloud<pcl::PointXYZ>);
-    if (!WARMUP_DONE)
-    { // Compute clusters from detections in the latest frame
-      copyPointCloud(*centers_cloud, *clusters_cloud);
-    }
-    else
-    { // Use cumulative information from previous frames
-      getCenterClusters(cumulative_cloud_, clusters_cloud, cluster_tolerance_,
-                        min_cluster_factor_ * frames_used_, frames_used_);
-      if (clusters_cloud->points.size() > TARGET_NUM_CIRCLES)
-      {
-        getCenterClusters(cumulative_cloud_, clusters_cloud, cluster_tolerance_,
-                          3.0 * frames_used_ / 4.0, frames_used_);
-      }
-    }
+    // // Compute centers clusters
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr clusters_cloud(
+    //     new pcl::PointCloud<pcl::PointXYZ>);
+    // if (!WARMUP_DONE)
+    // { // Compute clusters from detections in the latest frame
+    //   copyPointCloud(*centers_cloud, *clusters_cloud);
+    // }
+    // else
+    // { // Use cumulative information from previous frames
+    //   getCenterClusters(cumulative_cloud_, clusters_cloud, cluster_tolerance_,
+    //                     min_cluster_factor_ * frames_used_, frames_used_);
+    //   if (clusters_cloud->points.size() > TARGET_NUM_CIRCLES)
+    //   {
+    //     getCenterClusters(cumulative_cloud_, clusters_cloud, cluster_tolerance_,
+    //                       3.0 * frames_used_ / 4.0, frames_used_);
+    //   }
+    // }
 
-    // Publish pointcloud messages
-    if (DEBUG)
+    if (centers_cloud->points.size() == TARGET_NUM_CIRCLES)
     {
       sensor_msgs::msg::PointCloud2 ros_pointcloud;
       pcl::toROSMsg(*centers_cloud, ros_pointcloud); // circles_cloud
       ros_pointcloud.header = msg->header;
       qr_pub_->publish(ros_pointcloud);
-    }
 
-    if (clusters_cloud->points.size() == TARGET_NUM_CIRCLES)
-    {
-      sensor_msgs::msg::PointCloud2 centers_pointcloud;
-      pcl::toROSMsg(*clusters_cloud, centers_pointcloud);
-      centers_pointcloud.header = msg->header;
       if (DEBUG)
-      {
-        centers_cloud_pub_->publish(centers_pointcloud);
-      }
-
-      calibration_interfaces::msg::ClusterCentroids to_send;
-      to_send.header = msg->header;
-      to_send.cluster_iterations = frames_used_;
-      to_send.total_iterations = frames_proc_;
-      to_send.cloud = centers_pointcloud;
-      clusters_pub_->publish(to_send);
-
-      if (save_to_file_)
-      {
-        std::vector<pcl::PointXYZ> sorted_centers;
-        sortPatternCenters(clusters_cloud, sorted_centers);
-        for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-             it < sorted_centers.end(); ++it)
-        {
-          savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
-        }
-        savefile_ << cumulative_cloud_->width;
-      }
+        RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published.", get_name());
     }
-
-    if (DEBUG)
+    else
     {
-      sensor_msgs::msg::PointCloud2 cumulative_pointcloud;
-      pcl::toROSMsg(*cumulative_cloud_, cumulative_pointcloud);
-      cumulative_pointcloud.header = msg->header;
-      cumulative_pub_->publish(cumulative_pointcloud);
+      RCLCPP_ERROR(this->get_logger(), "Not enough circle found");
     }
 
-    if (save_to_file_)
-    {
-      savefile_ << std::endl;
-    }
+    // // Publish pointcloud messages
+    // if (DEBUG)
+    // {
+    //   sensor_msgs::msg::PointCloud2 ros_pointcloud;
+    //   pcl::toROSMsg(*centers_cloud, ros_pointcloud); // circles_cloud
+    //   ros_pointcloud.header = msg->header;
+    //   qr_pub_->publish(ros_pointcloud);
+    // }
+
+    // if (clusters_cloud->points.size() == TARGET_NUM_CIRCLES)
+    // {
+    //   sensor_msgs::msg::PointCloud2 centers_pointcloud;
+    //   pcl::toROSMsg(*clusters_cloud, centers_pointcloud);
+    //   centers_pointcloud.header = msg->header;
+    //   if (DEBUG)
+    //   {
+    //     centers_cloud_pub_->publish(centers_pointcloud);
+    //   }
+
+    //   calibration_interfaces::msg::ClusterCentroids to_send;
+    //   to_send.header = msg->header;
+    //   to_send.cluster_iterations = frames_used_;
+    //   to_send.total_iterations = frames_proc_;
+    //   to_send.cloud = centers_pointcloud;
+    //   clusters_pub_->publish(to_send);
+
+    //   if (save_to_file_)
+    //   {
+    //     std::vector<pcl::PointXYZ> sorted_centers;
+    //     sortPatternCenters(clusters_cloud, sorted_centers);
+    //     for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+    //          it < sorted_centers.end(); ++it)
+    //     {
+    //       savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+    //     }
+    //     savefile_ << cumulative_cloud_->width;
+    //   }
+    // }
+
+    // if (DEBUG)
+    // {
+    //   sensor_msgs::msg::PointCloud2 cumulative_pointcloud;
+    //   pcl::toROSMsg(*cumulative_cloud_, cumulative_pointcloud);
+    //   cumulative_pointcloud.header = msg->header;
+    //   cumulative_pub_->publish(cumulative_pointcloud);
+    // }
+
+    // if (save_to_file_)
+    // {
+    //   savefile_ << std::endl;
+    // }
   }
   else
   { // Markers found != TARGET_NUM_CIRCLES
@@ -640,13 +655,13 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
     cv::waitKey(1);
   }
 
-  // Clear cumulative cloud during warm-up phase
-  if (!WARMUP_DONE)
-  {
-    cumulative_cloud_->clear();
-    frames_proc_ = 0;
-    frames_used_ = 0;
-  }
+  // // Clear cumulative cloud during warm-up phase
+  // if (!WARMUP_DONE)
+  // {
+  //   cumulative_cloud_->clear();
+  //   frames_proc_ = 0;
+  //   frames_used_ = 0;
+  // }
 }
 
 rcl_interfaces::msg::SetParametersResult
@@ -676,18 +691,18 @@ MonoQRPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
   return result;
 }
 
-void MonoQRPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
-{
-  WARMUP_DONE = !WARMUP_DONE;
-  if (WARMUP_DONE)
-  {
-    RCLCPP_INFO(get_logger(), "Warm up done, pattern detection started");
-  }
-  else
-  {
-    RCLCPP_INFO(get_logger(), "Detection stopped. Warm up mode activated");
-  }
-}
+// void MonoQRPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
+// {
+//   WARMUP_DONE = !WARMUP_DONE;
+//   if (WARMUP_DONE)
+//   {
+//     RCLCPP_INFO(get_logger(), "Warm up done, pattern detection started");
+//   }
+//   else
+//   {
+//     RCLCPP_INFO(get_logger(), "Detection stopped. Warm up mode activated");
+//   }
+// }
 
 int main(int argc, char **argv)
 {

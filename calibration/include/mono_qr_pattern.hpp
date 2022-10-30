@@ -35,26 +35,27 @@ private:
   Eigen::Matrix3f covariance(pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud, Eigen::Vector3f means);
   void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr msg, const sensor_msgs::msg::CameraInfo::ConstSharedPtr left_info);
   rcl_interfaces::msg::SetParametersResult param_callback(const std::vector<rclcpp::Parameter> &parameters);
-  void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
+  // void warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg);
 
   // Pubs Definition
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_, cumulative_pub_;
+  // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_, cumulative_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_;
   rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub_;
 
   // Subs Definition
   message_filters::Subscriber<sensor_msgs::msg::Image> image_sub_;
   message_filters::Subscriber<sensor_msgs::msg::CameraInfo> cinfo_sub_;
-  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub_;
+  // rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub_;
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud_;
+  // pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud_;
   cv::Ptr<cv::aruco::Dictionary> dictionary_;
   /** \brief Synchronized image and camera info.*/
   std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>>> sync_;
   /** \brief The maximum queue size (default: 3). */
   int max_queue_size_ = 3;
-  int frames_proc_ = 0, frames_used_ = 0;
-  bool WARMUP_DONE = false;
-  std::ofstream savefile_;
+  // int frames_proc_ = 0, frames_used_ = 0;
+  // bool WARMUP_DONE = false;
+  // std::ofstream savefile_;
 
   // Node Parameters
   // Target parameters
@@ -65,11 +66,11 @@ private:
   unsigned min_detected_markers_;
   std::string config_file_;
 
-  // Aggregation parameters
-  bool skip_warmup_;
-  double cluster_tolerance_;
-  double min_cluster_factor_;
+  // // Aggregation parameters
+  // bool skip_warmup_;
+  // double cluster_tolerance_;
+  // double min_cluster_factor_;
 
-  // Debug parameters
-  bool save_to_file_;
+  // // Debug parameters
+  // bool save_to_file_;
 };

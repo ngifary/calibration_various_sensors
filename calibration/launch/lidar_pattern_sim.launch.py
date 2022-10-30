@@ -107,7 +107,6 @@ def generate_launch_description():
             'target_radius_tolerance': 0.01,
             'delta_width_circles': 0.5,
             'delta_height_circles': 0.4,
-            'save_to_file': False
         }],
         output=stdout
     )

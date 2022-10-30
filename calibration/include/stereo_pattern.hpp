@@ -45,25 +45,25 @@ private:
   bool WARMUP_DONE = false;
   bool skip_warmup_;
   bool save_to_file_;
-  std::ofstream savefile;
+  std::ofstream savefile_;
 
   // Pubs Definition
-  rclcpp::Publisher<pcl_msgs::msg::PointIndices>::SharedPtr inliers_pub;
-  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr plane_edges_pub, xy_pattern_pub, cumulative_pub;
-  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr final_pub;
+  rclcpp::Publisher<pcl_msgs::msg::PointIndices>::SharedPtr inliers_pub_;
+  rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr plane_edges_pub_, xy_pattern_pub_, cumulative_pub_;
+  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr final_pub_;
 
   // Subs Definition
   message_filters::Subscriber<sensor_msgs::msg::PointCloud2> camera_cloud_sub_;
   message_filters::Subscriber<pcl_msgs::msg::ModelCoefficients> cam_plane_coeffs_sub_;
-  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub;
+  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr warmup_sub_;
 
   /** \brief Synchronized image and camera info.*/
   std::shared_ptr<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>> sync_;
   /** \brief The maximum queue size (default: 3). */
   int max_queue_size_ = 3;
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cumulative_cloud_;
 
   std_msgs::msg::Header header_;
 };
