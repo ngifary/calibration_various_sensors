@@ -124,8 +124,6 @@ void OverlayImage::drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv:
 
     cv::projectPoints(pts, cv::Mat::zeros(3, 1, CV_64FC1), cv::Mat::zeros(3, 1, CV_64FC1), k, d, points);
 
-    // cv::Mat greyscale_range(image.size().height, image.size().width, CV_8UC1, cv::Scalar(0, 0, 0));
-
     bool debug = true;
 
     for (auto i = 0; i < points.size(); i++)
@@ -136,22 +134,14 @@ void OverlayImage::drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv:
         {
             double distance = std::sqrt(std::pow(pts[i].x, 2) + std::pow(pts[i].y, 2) + std::pow(pts[i].z, 2));
             double normal = normalizeRange(distance);
-            
-            // greyscale_range.at<uchar>(y, x) = round(normal * 255);
-            
-            cv::circle(image, points[i], 10, cv::Scalar(255,0,0), -1);
+
+            cv::circle(image, points[i], 10, cv::Scalar(255, 0, 0), -1);
         }
         else
         {
             continue;
         }
     }
-
-    // cv::Mat colored_range(image.size().height, image.size().width, CV_8UC3, cv::Scalar(0, 0, 0));
-
-    // cv::applyColorMap(greyscale_range, colored_range, cv::COLORMAP_HOT);
-
-    // image += colored_range;
 }
 
 void OverlayImage::lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<cv::Point3f> &points_cv)
@@ -159,11 +149,11 @@ void OverlayImage::lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, st
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cv(new pcl::PointCloud<pcl::PointXYZ>());
     tf2::Transform transform;
     tf2::Quaternion quaternion;
-    // quaternion.setEuler((float)M_PI_2, 0.0, (float)-M_PI_2);
-    quaternion.setW(0.5);
-    quaternion.setX(0.5);
-    quaternion.setY(0.5);
-    quaternion.setZ(-0.5);
+    tf2Scalar roll, pitch, yaw;
+    roll = M_PI_2;
+    pitch = 0.0;
+    yaw = M_PI_2;
+    quaternion.setRPY(roll, pitch, yaw);
 
     transform.setRotation(quaternion);
 

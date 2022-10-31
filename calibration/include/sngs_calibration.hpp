@@ -10,6 +10,7 @@
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/static_transform_broadcaster.h"
 #include "tf2/transform_datatypes.h"
+#include "tf2/impl/utils.h"
 #include "tinyxml2.h"
 #include "laser2cam_utils.h"
 #include "opencv2/opencv.hpp"
@@ -53,6 +54,8 @@ private:
     void initializeParams();
     void calibrateExtrinsics(int seek_iter);
     void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor1_centroids, const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor2_centroids);
+    tf2::Transform calibrateExtrinsics(std::vector<tf2::Vector3> sensor1_pts, std::vector<tf2::Vector3> sensor2_pts);
+    void camera_to_lidar(sensor_msgs::msg::PointCloud2::ConstPtr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out);
 
     // Pubs Declaration
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clusters_sensor2_pub_, clusters_sensor1_pub_;
