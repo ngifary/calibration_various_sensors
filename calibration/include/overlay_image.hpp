@@ -13,11 +13,11 @@
 #include "pcl_conversions/pcl_conversions.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "laser2cam_utils.h"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "image_transport/image_transport.hpp"
-
 #include "opencv2/opencv.hpp"
 
 class OverlayImage : public rclcpp::Node
@@ -44,23 +44,6 @@ public:
 private:
     void initializeParams();
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr image, const sensor_msgs::msg::CameraInfo::ConstSharedPtr camera, sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud);
-
-    /**
-     * @brief Convert camera to lidar convention or right-down-forward to forward-left-up setEuler(-90,0,-90)
-     *
-     * @param points_cv
-     * @param cloud
-     */
-    void camera_to_lidar(std::vector<cv::Point3f> &points_cv, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
-
-    /**
-     * @brief Convert lidar to camera convention or forward-left-up to right-down-forward setEuler(90,0,90)
-     *
-     * @param cloud
-     * @param points_cv
-     */
-    void lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<cv::Point3f> &points_cv);
-
     void drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv::Mat k, cv::Mat d);
 
     // Pubs Definition

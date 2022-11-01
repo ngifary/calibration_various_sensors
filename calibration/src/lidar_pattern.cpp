@@ -138,7 +138,7 @@ void LidarPattern::initializeParams()
   desc.name = "line_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "Line threshold for line segmentation (m)";
-  line_threshold_ = declare_parameter(desc.name, 0.005);
+  line_threshold_ = declare_parameter(desc.name, 0.01);
 
   desc.name = "plane_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -148,7 +148,7 @@ void LidarPattern::initializeParams()
   desc.name = "gap_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  gap_threshold_ = declare_parameter(desc.name, 0.01);
+  gap_threshold_ = declare_parameter(desc.name, 0.02);
 
   desc.name = "circle_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -372,7 +372,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in cloud of size %lu",
                 get_name(), edges_cloud->points.size());
-  if (edges_cloud->points.size() > 20)
+  if (edges_cloud->points.size() > 30)
   {
     RCLCPP_INFO(get_logger(), "[%s] Too much points in cloud. Please adjust gap_threshold", get_name());
     return;

@@ -8,8 +8,11 @@
 #define PCL_NO_PRECOMPILE
 #define DEBUG 1
 
-#include <pcl/search/kdtree.h>
-#include <pcl/segmentation/extract_clusters.h>
+#include "pcl_ros/transforms.hpp"
+#include "pcl/search/kdtree.h"
+#include "pcl/segmentation/extract_clusters.h"
+#include "tf2/transform_datatypes.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 #define TARGET_NUM_CIRCLES 4
 #define GEOMETRY_TOLERANCE 0.06
@@ -27,8 +30,8 @@ namespace LaserScanner
   struct PointSphere
   {
     float radius; // linear
-    float theta;  // azimuth
-    float phi;    // polar
+    float theta;  // polar
+    float phi;    // azimuth
   };
 
   void addRange(pcl::PointCloud<LaserScanner::Point> &pc)
@@ -129,37 +132,73 @@ namespace LaserScanner
 POINT_CLOUD_REGISTER_POINT_STRUCT(LaserScanner::Point,
                                   (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(float, range, range))
 
+/**
+ * @brief Convert camera to lidar convention or right-down-forward to forward-left-up setEuler(-90,0,-90)
+ *
+ * @param camera
+ * @param lidar
+ */
+void camera_to_lidar(pcl::PointCloud<pcl::PointXYZ>::Ptr camera, pcl::PointCloud<pcl::PointXYZ>::Ptr lidar)
+{
+  tf2::Transform transform;
+  tf2::Quaternion quaternion;
+  tf2Scalar roll, pitch, yaw;
+  roll = -M_PI_2;
+  pitch = 0.0;
+  yaw = -M_PI_2;
+  quaternion.setRPY(roll, pitch, yaw);
+
+  transform.setRotation(quaternion);
+
+  pcl_ros::transformPointCloud(*camera, *lidar, transform);
+}
+
+/**
+ * @brief Convert lidar to camera convention or forward-left-up to right-down-forward setEuler(90,0,90)
+ *
+ * @param lidar
+ * @param camera
+ */
+void lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr lidar, pcl::PointCloud<pcl::PointXYZ>::Ptr camera)
+{
+  tf2::Transform transform;
+  tf2::Quaternion quaternion;
+  tf2Scalar roll, pitch, yaw;
+  roll = M_PI_2;
+  pitch = 0.0;
+  yaw = M_PI_2;
+  quaternion.setRPY(roll, pitch, yaw);
+
+  transform.setRotation(quaternion);
+
+  pcl_ros::transformPointCloud(*lidar, *camera, transform);
+}
+
 void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
-                        std::vector<pcl::PointXYZ> &v)
+                        std::vector<pcl::PointXYZ> &pts_vec)
 {
   // 0 -- 1
   // |    |
   // 3 -- 2
 
-  if (v.empty())
+  std::cout << "here 1" << std::endl;
+
+  if (pts_vec.empty())
   {
-    v.resize(4);
+    pts_vec.resize(4);
   }
 
   // Transform points to polar coordinates
-  pcl::PointCloud<pcl::PointXYZ>::Ptr spherical_centers(
-      new pcl::PointCloud<pcl::PointXYZ>());
-  int top_pt = 0;
-  int index = 0; // Auxiliar index to be used inside loop
-  for (pcl::PointCloud<pcl::PointXYZ>::iterator pt = pc->points.begin();
-       pt < pc->points.end(); pt++, index++)
+  ushort top_pt = 0;
+  std::vector<LaserScanner::PointSphere> sphere_centers{4};
+  for (ushort i; i < (ushort)pc->size(); i++)
   {
-    pcl::PointXYZ spherical_center;
-    spherical_center.x = atan2(pt->y, pt->x); // Horizontal
-    spherical_center.y =
-        atan2(sqrt(pt->x * pt->x + pt->y * pt->y), pt->z); // Vertical
-    spherical_center.z =
-        sqrt(pt->x * pt->x + pt->y * pt->y + pt->z * pt->z); // Range
-    spherical_centers->push_back(spherical_center);
+    LaserScanner::PointSphere sphere_center = LaserScanner::toSpherical(pc->at(i));
+    sphere_centers[i] = sphere_center;
 
-    if (spherical_center.y < spherical_centers->points[top_pt].y)
+    if (sphere_center.theta < sphere_centers[top_pt].theta)
     {
-      top_pt = index;
+      top_pt = i;
     }
   }
 
@@ -176,7 +215,7 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
 
   // Get indices of closest and furthest points
   int min_dist = (top_pt + 1) % 4, max_dist = top_pt;
-  for (int i = 0; i < 4; i++)
+  for (ushort i = 0; i < pc->size(); i++)
   {
     if (i == top_pt)
       continue;
@@ -197,8 +236,7 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   int lefttop_pt = top_pt;
   int righttop_pt = top_pt2;
 
-  if (spherical_centers->points[top_pt].x <
-      spherical_centers->points[top_pt2].x)
+  if (sphere_centers[top_pt].phi < sphere_centers[top_pt2].phi)
   {
     int aux = lefttop_pt;
     lefttop_pt = righttop_pt;
@@ -206,9 +244,8 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   }
 
   // Swap indices if target is located in the pi,-pi discontinuity
-  double angle_diff = spherical_centers->points[lefttop_pt].x -
-                      spherical_centers->points[righttop_pt].x;
-  if (angle_diff > M_PI - spherical_centers->points[lefttop_pt].x)
+  double angle_diff = sphere_centers[lefttop_pt].phi - sphere_centers[righttop_pt].phi;
+  if (angle_diff > M_PI - sphere_centers[lefttop_pt].phi)
   {
     int aux = lefttop_pt;
     lefttop_pt = righttop_pt;
@@ -226,11 +263,13 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
     rightbottom_pt = min_dist;
   }
 
+  std::cout << lefttop_pt << righttop_pt << rightbottom_pt << leftbottom_pt << std::endl;
+
   // Fill vector with sorted centers
-  v[0] = pc->points[lefttop_pt];     // lt
-  v[1] = pc->points[righttop_pt];    // rt
-  v[2] = pc->points[rightbottom_pt]; // rb
-  v[3] = pc->points[leftbottom_pt];  // lb
+  pts_vec[0] = pc->points[lefttop_pt];     // lt
+  pts_vec[1] = pc->points[righttop_pt];    // rt
+  pts_vec[2] = pc->points[rightbottom_pt]; // rb
+  pts_vec[3] = pc->points[leftbottom_pt];  // lb
 }
 
 void colourCenters(const std::vector<pcl::PointXYZ> pc,

@@ -54,12 +54,12 @@ private:
     void initializeParams();
     void calibrateExtrinsics(int seek_iter);
     void callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor1_centroids, const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor2_centroids);
-    tf2::Transform calibrateExtrinsics(std::vector<tf2::Vector3> sensor1_pts, std::vector<tf2::Vector3> sensor2_pts);
-    void camera_to_lidar(sensor_msgs::msg::PointCloud2::ConstPtr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out);
+    tf2::Transform calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl);
+    // void camera_to_lidar(sensor_msgs::msg::PointCloud2::ConstPtr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out);
 
     // Pubs Declaration
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clusters_sensor2_pub_, clusters_sensor1_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr both_centroids_pub_;
+    // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr both_centroids_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colour_sensor2_pub_, colour_sensor1_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr iterations_pub_;
 
@@ -69,9 +69,9 @@ private:
     message_filters::Subscriber<sensor_msgs::msg::PointCloud2> sensor2_sub_;
 
     // Sensor 1 Declaration
-    bool sensor1Received_, sensor2Received_;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud_, sensor2_cloud_;
-    pcl::PointCloud<pcl::PointXYZI>::Ptr isensor1_cloud_, isensor2_cloud_;
+    // bool sensor1Received_, sensor2Received_;
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud_, sensor2_cloud_;
+    // pcl::PointCloud<pcl::PointXYZI>::Ptr isensor1_cloud_, isensor2_cloud_;
 
     /** \brief Synchronized inputs.*/
     std::shared_ptr<message_filters::Synchronizer<exact_policy>> sync_inputs_e_;

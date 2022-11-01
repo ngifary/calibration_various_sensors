@@ -12,19 +12,7 @@ Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
 
     initializeParams();
 
-    // Sensor 1 Definition
-    sensor1_cloud_ =
-        pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-    isensor1_cloud_ =
-        pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
-
-    // Sensor 2 Definition
-    sensor2_cloud_ =
-        pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
-    isensor2_cloud_ =
-        pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
-
-    both_centroids_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("both_centers_cloud", 1);
+    // both_centroids_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("both_centers_cloud", 1);
 
     sensor1_sub_.subscribe(this, "cloud1", cloudQoS().get_rmw_qos_profile());
     sensor2_sub_.subscribe(this, "cloud2", cloudQoS().get_rmw_qos_profile());
@@ -212,32 +200,29 @@ void Registration::initializeParams()
     csv_name_ = declare_parameter(desc.name, "registration_" + currentDateTime() + ".csv");
 }
 
-tf2::Transform Registration::calibrateExtrinsics(std::vector<tf2::Vector3> sensor1_pts, std::vector<tf2::Vector3> sensor2_pts)
+tf2::Transform Registration::calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl)
 {
+
+    std::vector<tf2::Vector3> sensor1_pts{4}, sensor2_pts{4};
+    for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
+    {
+        sensor1_pts[i].setX(sensor1_pcl.at(i).x);
+        sensor1_pts[i].setY(sensor1_pcl.at(i).y);
+        sensor1_pts[i].setZ(sensor1_pcl.at(i).z);
+
+        sensor2_pts[i].setX(sensor2_pcl.at(i).x);
+        sensor2_pts[i].setY(sensor2_pcl.at(i).y);
+        sensor2_pts[i].setZ(sensor2_pcl.at(i).z);
+    }
+
     tf2::Transform tf_sensor1_sensor2;
-
-    // tf2::Vector3 translation;
-    // // tf2Scalar x, y, z;
-
-    // for (ushort i = 0; i < 4; i++)
-    // {
-    //     translation += sensor2_pts[i] - sensor2_pts[i];
-    //     // x += sensor2_pts[i].getX() - sensor1_pts[i].getX();
-    //     // y += sensor2_pts[i].getY() - sensor1_pts[i].getY();
-    //     // z += sensor2_pts[i].getZ() - sensor1_pts[i].getZ();
-    // }
-    // translation /= 4;
-    // // translation.setX(x/4);
-    // // translation.setY(y/4);
-    // // translation.setZ(z/4);
-    // tf_sensor1_sensor2.setOrigin(translation);
 
     tf2::Vector3 translation;
     tf2::Vector3 rotation;
     // Get rotation by comparing the normal vector of a planar triangle (4C3) from each sensor
-    for (ushort j = 0; j < 4; j++) // 012 123 230 301 with modulus 4
+    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++) // 012 123 230 301 with modulus 4
     {
-        ushort first = j%4, second = (j+1)%4 , third = (j+2)%4;
+        ushort first = j % 4, second = (j + 1) % 4, third = (j + 2) % 4;
 
         tf2::Vector3 triangle1_pt1 = sensor1_pts[first];
         tf2::Vector3 triangle1_pt2 = sensor1_pts[second];
@@ -248,20 +233,20 @@ tf2::Transform Registration::calibrateExtrinsics(std::vector<tf2::Vector3> senso
         tf2::Vector3 triangle2_pt3 = sensor2_pts[third];
 
         // Get translation
-        translation += (triangle2_pt1 + triangle2_pt2 + triangle2_pt3) - (triangle1_pt1 + triangle1_pt2 + triangle1_pt3);
+        translation += (triangle2_pt1 - triangle1_pt1);
 
-        tf2::Vector3 triangle1_normal = (triangle1_pt1 - triangle1_pt2).cross(triangle1_pt1 - triangle1_pt3);
-        tf2::Vector3 triangle2_normal = (triangle2_pt1 - triangle2_pt2).cross(triangle2_pt1 - triangle2_pt3);
+        tf2::Vector3 triangle1_normal = (triangle1_pt1 - triangle1_pt2).cross(triangle1_pt2 - triangle1_pt3);
+        tf2::Vector3 triangle2_normal = (triangle2_pt1 - triangle2_pt2).cross(triangle2_pt2 - triangle2_pt3);
 
         // Get quaternion cos(theta/2) + sin(theta/2)*(x'i + y'j + z'k) = w + xi + yj + zk
-        double theta = triangle1_normal.angle(triangle2_normal); // theta
+        double theta = triangle1_normal.angle(triangle2_normal);                  // theta
         tf2::Vector3 axis = triangle1_normal.cross(triangle2_normal).normalize(); // x'i + y'j + z'k
 
         tf2::Quaternion quaternion;
-        quaternion.setW(std::cos(theta/2));
-        quaternion.setX(std::sin(theta/2)*axis.getX());
-        quaternion.setY(std::sin(theta/2)*axis.getY());
-        quaternion.setZ(std::sin(theta/2)*axis.getZ());
+        quaternion.setW(std::cos(theta / 2));
+        quaternion.setX(std::sin(theta / 2) * axis.getX());
+        quaternion.setY(std::sin(theta / 2) * axis.getY());
+        quaternion.setZ(std::sin(theta / 2) * axis.getZ());
 
         double roll, pitch, yaw;
         tf2::impl::getEulerYPR(quaternion, yaw, pitch, roll);
@@ -269,146 +254,101 @@ tf2::Transform Registration::calibrateExtrinsics(std::vector<tf2::Vector3> senso
         rotation.setY(rotation.getY() + pitch);
         rotation.setZ(rotation.getZ() + yaw);
     }
-    translation /= 36;
-    rotation /= 4;
+    translation = translation / 4;
+    tf_sensor1_sensor2.setOrigin(translation);
+    rotation = rotation / 4;
     tf2::Quaternion quaternion;
     quaternion.setRPY(rotation.getX(), rotation.getY(), rotation.getZ());
     tf_sensor1_sensor2.setRotation(quaternion);
 
+    RCLCPP_INFO(get_logger(), "The transformation of sensor 1 to sensor 2 is: [%f, %f, %f]",
+                translation.getX(),
+                translation.getY(),
+                translation.getZ());
+
     return tf_sensor1_sensor2;
-}
-
-void Registration::camera_to_lidar(sensor_msgs::msg::PointCloud2::ConstPtr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out)
-{
-    std::string frame_id = cloud_in->header.frame_id;
-    // std::ostringstream sstream;
-    // sstream << "rotated_" << frame_id;
-    // std::string rotated_frame_id = sstream.str();
-    std::string rotated_frame_id = "rotated_" + frame_id;
-    // sensor1_rotated_frame_id_ = sstream.str();
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr xy_cloud_(
-        new pcl::PointCloud<pcl::PointXYZ>());
-
-    pcl::fromROSMsg(*cloud_in, *xy_cloud_);
-
-    geometry_msgs::msg::TransformStamped transform;
-
-    try
-    {
-        transform = tf_buffer_.lookupTransform(rotated_frame_id, frame_id,
-                                               tf2::TimePointZero, tf2::durationFromSec(20.0));
-    }
-    catch (tf2::TransformException &ex)
-    {
-        RCLCPP_WARN(this->get_logger(), "TF exception:\n%s", ex.what());
-        return;
-    }
-
-    tf2::Transform tf_transform;
-    tf2::fromMsg(transform, tf_transform);
-    tf2::Transform inverse = tf_transform.inverse();
-    double roll, pitch, yaw;
-    inverse.getBasis().getRPY(roll, pitch, yaw);
-
-    pcl_ros::transformPointCloud(*xy_cloud_, *cloud_out, transform);
 }
 
 void Registration::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor1_centroids, const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor2_centroids)
 {
-
     RCLCPP_INFO(this->get_logger(), "Cluster pair correspondence received!.");
     RCLCPP_INFO(get_logger(), "[Time stamp] Sensor 1: [%i, %i] and Sensor 2: [%i, %i]", sensor1_centroids->header.stamp.sec, sensor1_centroids->header.stamp.nanosec, sensor2_centroids->header.stamp.sec, sensor2_centroids->header.stamp.nanosec);
 
-    std::string sensor1_frame_id = sensor1_centroids->header.frame_id;
-    std::string sensor2_frame_id = sensor2_centroids->header.frame_id;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud(new pcl::PointCloud<pcl::PointXYZ>),
+        sensor2_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr isensor1_cloud(new pcl::PointCloud<pcl::PointXYZI>),
+        isensor2_cloud(new pcl::PointCloud<pcl::PointXYZI>);
 
+    fromROSMsg(*sensor1_centroids, *sensor1_cloud);
+    fromROSMsg(*sensor2_centroids, *sensor2_cloud);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr aux(new pcl::PointCloud<pcl::PointXYZ>);
+
+    for (ushort i = 0; i < 4; i++)
+    {
+        RCLCPP_INFO(get_logger(), "[input] %ith point of camera: [%f, %f, %f]", i, sensor1_cloud->at(i).x, sensor1_cloud->at(i).y, sensor1_cloud->at(i).z);
+        RCLCPP_INFO(get_logger(), "[input] %ith point of lidar: [%f, %f, %f]", i, sensor2_cloud->at(i).x, sensor2_cloud->at(i).y, sensor2_cloud->at(i).z);
+    }
+    is_sensor1_cam_ = true;
     if (is_sensor1_cam_)
     {
-        camera_to_lidar(sensor1_centroids, sensor1_cloud_);
+        camera_to_lidar(sensor1_cloud, aux);
+        sensor1_cloud.swap(aux);
     }
-    else
-    {
-        fromROSMsg(*sensor1_centroids, *sensor1_cloud_);
-    }
-
+    is_sensor2_cam_ = false;
     if (is_sensor2_cam_)
     {
-        camera_to_lidar(sensor2_centroids, sensor2_cloud_);
-    }
-    else
-    {
-        fromROSMsg(*sensor2_centroids, *sensor2_cloud_);
+        camera_to_lidar(sensor2_cloud, aux);
+        sensor2_cloud.swap(aux);
     }
 
-    sortPatternCenters(sensor1_cloud_, sensor1_vector_);
-    sortPatternCenters(sensor2_cloud_, sensor2_vector_);
+    std::vector<pcl::PointXYZ> *sensor1_vector(new std::vector<pcl::PointXYZ>);
+    std::vector<pcl::PointXYZ> *sensor2_vector(new std::vector<pcl::PointXYZ>);
 
-    if (DEBUG)
+    for (ushort i = 0; i < 4; i++)
     {
-        sensor_msgs::msg::PointCloud2 colour_cloud_;
+        RCLCPP_INFO(get_logger(), "[rotated] %ith point of camera: [%f, %f, %f]", i, sensor1_cloud->at(i).x, sensor1_cloud->at(i).y, sensor1_cloud->at(i).z);
+        RCLCPP_INFO(get_logger(), "[rotated] %ith point of lidar: [%f, %f, %f]", i, sensor2_cloud->at(i).x, sensor2_cloud->at(i).y, sensor2_cloud->at(i).z);
+    }
 
-        colourCenters(sensor1_vector_, isensor1_cloud_);
-        pcl::toROSMsg(*isensor1_cloud_, colour_cloud_);
-        colour_cloud_.header.frame_id =
-            is_sensor1_cam_ ? "rotated_" + sensor1_frame_id : sensor1_frame_id;
-        colour_sensor1_pub_->publish(colour_cloud_);
+    sortPatternCenters(sensor1_cloud, *sensor1_vector);
+    sortPatternCenters(sensor2_cloud, *sensor2_vector);
 
-        colourCenters(sensor2_vector_, isensor2_cloud_);
-        pcl::toROSMsg(*isensor2_cloud_, colour_cloud_);
-        colour_cloud_.header.frame_id =
-            is_sensor2_cam_ ? "rotated_" + sensor2_frame_id : sensor2_frame_id;
-        colour_sensor2_pub_->publish(colour_cloud_);
+    for (ushort i = 0; i < 4; i++)
+    {
+        RCLCPP_INFO(get_logger(), "[sorted] %ith point of camera: [%f, %f, %f]", i, sensor1_vector->at(i).x, sensor1_vector->at(i).y, sensor1_vector->at(i).z);
+        RCLCPP_INFO(get_logger(), "[sorted] %ith point of lidar: [%f, %f, %f]", i, sensor2_vector->at(i).x, sensor2_vector->at(i).y, sensor2_vector->at(i).z);
     }
 
     // if (DEBUG)
     // {
-    //     for (std::vector<pcl::PointXYZ>::iterator it = sensor1_vector_.begin();
-    //          it < sensor1_vector_.end(); ++it)
-    //     {
+    //     std::string sensor1_frame_id = sensor1_centroids->header.frame_id;
+    //     std::string sensor2_frame_id = sensor2_centroids->header.frame_id;
+    //     sensor_msgs::msg::PointCloud2 colour_cloud_;
 
-    //         std::cout << "l" << it - sensor1_vector_.begin() << "="
-    //                   << "[" << (*it).x << " " << (*it).y << " " << (*it).z << "]" << std::endl;
-    //     }
+    //     colourCenters(sensor1_vector_, isensor1_cloud);
+    //     pcl::toROSMsg(*isensor1_cloud, colour_cloud_);
+    //     colour_cloud_.header.frame_id =
+    //         is_sensor1_cam_ ? "rotated_" + sensor1_frame_id : sensor1_frame_id;
+    //     colour_sensor1_pub_->publish(colour_cloud_);
+
+    //     colourCenters(sensor2_vector_, isensor2_cloud);
+    //     pcl::toROSMsg(*isensor2_cloud, colour_cloud_);
+    //     colour_cloud_.header.frame_id =
+    //         is_sensor2_cam_ ? "rotated_" + sensor2_frame_id : sensor2_frame_id;
+    //     colour_sensor2_pub_->publish(colour_cloud_);
     // }
 
-    // // sync_iterations_ is designed to extract a calibration result every single
-    // // frame, so we cannot wait until TARGET_ITERATIONS
-    // if (sync_iterations_)
-    // {
-    //     if (sensor2_count_ >= sensor1_count_)
-    //     {
-    //         calibrateExtrinsics(sensor1_count_);
-    //     }
-    //     else
-    //     {
-    //         if (tf_sensor1_sensor2_.header.frame_id != "" &&
-    //             tf_sensor1_sensor2_.child_frame_id != "")
-    //         {
-    //             static auto br = tf2_ros::StaticTransformBroadcaster(this);
-    //             tf_sensor1_sensor2_.header.stamp = this->get_clock()->now();
-    //             if (publish_tf_)
-    //                 br.sendTransform(tf_sensor1_sensor2_);
-    //         }
-    //     }
-    //     return;
-    // }
+    tf2::Transform tf_sensor1_sensor2 = calibrateExtrinsics(*sensor1_vector, *sensor2_vector);
 
+    double roll, pitch, yaw;
+    tf2::impl::getEulerYPR(tf_sensor1_sensor2.getRotation(), yaw, pitch, roll);
 
-
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1Centroids(new pcl::PointCloud<pcl::PointXYZ>),
-    //     sensor2Centroids(new pcl::PointCloud<pcl::PointXYZ>),
-    //     combinedCentroids(new pcl::PointCloud<pcl::PointXYZ>);
-    // sensor_msgs::msg::PointCloud2 combined_centroids;
-
-    // pcl::fromROSMsg(*sensor1_centroids, *sensor1Centroids);
-    // pcl::fromROSMsg(*sensor2_centroids, *sensor2Centroids);
-    // *combinedCentroids = *sensor1Centroids;
-    // *combinedCentroids += *sensor2Centroids;
-    // pcl::toROSMsg(*combinedCentroids, combined_centroids);
-    // combined_centroids.header = sensor1_centroids->header;
-
-    // both_centroids_pub_->publish(combined_centroids);
+    RCLCPP_INFO(get_logger(), "The transformation of sensor 1 in sensor 2 is: [%f, %f, %f, %f, %f, %f]",
+                tf_sensor1_sensor2.getOrigin().getX(),
+                tf_sensor1_sensor2.getOrigin().getY(),
+                tf_sensor1_sensor2.getOrigin().getZ(),
+                roll, pitch, yaw);
 }
 
 int main(int argc, char **argv)

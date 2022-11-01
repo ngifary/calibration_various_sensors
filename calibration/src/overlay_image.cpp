@@ -107,7 +107,18 @@ void OverlayImage::callback(const sensor_msgs::msg::Image::ConstSharedPtr image_
 
     std::vector<cv::Point3f> *cloud_cv = new std::vector<cv::Point3f>;
 
-    lidar_to_camera(cloud_pcl, *cloud_cv);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xy(new pcl::PointCloud<pcl::PointXYZ>());
+
+    lidar_to_camera(cloud_pcl, cloud_xy);
+
+    for (int i = 0; i < cloud_xy->size(); ++i)
+    {
+        cv::Point3f point;
+        point.x = cloud_xy->points[i].x;
+        point.y = cloud_xy->points[i].y;
+        point.z = cloud_xy->points[i].z;
+        cloud_cv->push_back(point);
+    }
 
     drawPoints(*imageCopy, *cloud_cv, cameraMatrix, distCoeffs);
 
@@ -141,31 +152,6 @@ void OverlayImage::drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv:
         {
             continue;
         }
-    }
-}
-
-void OverlayImage::lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<cv::Point3f> &points_cv)
-{
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cv(new pcl::PointCloud<pcl::PointXYZ>());
-    tf2::Transform transform;
-    tf2::Quaternion quaternion;
-    tf2Scalar roll, pitch, yaw;
-    roll = M_PI_2;
-    pitch = 0.0;
-    yaw = M_PI_2;
-    quaternion.setRPY(roll, pitch, yaw);
-
-    transform.setRotation(quaternion);
-
-    pcl_ros::transformPointCloud(*cloud, *cloud_cv, transform);
-
-    points_cv.resize(cloud_cv->size());
-
-    for (int i = 0; i < cloud_cv->size(); ++i)
-    {
-        points_cv[i].x = cloud_cv->points[i].x;
-        points_cv[i].y = cloud_cv->points[i].y;
-        points_cv[i].z = cloud_cv->points[i].z;
     }
 }
 
