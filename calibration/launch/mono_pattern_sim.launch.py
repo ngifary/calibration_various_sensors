@@ -45,7 +45,6 @@ def generate_launch_description():
         package='calibration',
         executable='mono_qr_pattern',
         name=['mono_qr_pattern_', sensor_id],
-        namespace=camera_name,
         remappings=[
             ('centers_cloud', ['mono_qr_pattern_',
              sensor_id, '/centers_cloud'])

@@ -13,6 +13,7 @@
 #include "pcl/segmentation/extract_clusters.h"
 #include "tf2/transform_datatypes.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/impl/utils.h"
 
 #define TARGET_NUM_CIRCLES 4
 #define GEOMETRY_TOLERANCE 0.06
@@ -163,11 +164,19 @@ void lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr lidar, pcl::PointCloud<
 {
   tf2::Transform transform;
   tf2::Quaternion quaternion;
-  tf2Scalar roll, pitch, yaw;
-  roll = M_PI_2;
-  pitch = 0.0;
-  yaw = M_PI_2;
-  quaternion.setRPY(roll, pitch, yaw);
+  tf2Scalar roll = 0.0, pitch = 0.0, yaw = 0.0;
+  // roll = M_PI_2;
+  // pitch = 0.0;
+  // yaw = M_PI_2;
+  quaternion.setW(0.5);
+  quaternion.setX(-0.5);
+  quaternion.setY(0.5);
+  quaternion.setZ(0.5);
+
+  // quaternion.setRPY(1.57, 0.0, 1.57);
+  tf2::impl::getEulerYPR(quaternion, yaw, pitch, roll);
+
+  std::cout << "roll: " << roll << " pitch: " << pitch << " yaw: " << yaw << std::endl;
 
   transform.setRotation(quaternion);
 
@@ -181,8 +190,6 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   // |    |
   // 3 -- 2
 
-  std::cout << "here 1" << std::endl;
-
   if (pts_vec.empty())
   {
     pts_vec.resize(4);
@@ -191,7 +198,7 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   // Transform points to polar coordinates
   ushort top_pt = 0;
   std::vector<LaserScanner::PointSphere> sphere_centers{4};
-  for (ushort i; i < (ushort)pc->size(); i++)
+  for (ushort i = 0; i < (ushort)pc->size(); i++)
   {
     LaserScanner::PointSphere sphere_center = LaserScanner::toSpherical(pc->at(i));
     sphere_centers[i] = sphere_center;
@@ -204,9 +211,9 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
 
   // Compute distances from top-most center to rest of points
   std::vector<double> distances;
-  for (int i = 0; i < 4; i++)
+  for (ushort j = 0; j < (ushort)pc->size(); j++)
   {
-    pcl::PointXYZ pt = pc->points[i];
+    pcl::PointXYZ pt = pc->points[j];
     pcl::PointXYZ upper_pt = pc->points[top_pt];
     distances.push_back(sqrt(pow(pt.x - upper_pt.x, 2) +
                              pow(pt.y - upper_pt.y, 2) +
@@ -215,17 +222,17 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
 
   // Get indices of closest and furthest points
   int min_dist = (top_pt + 1) % 4, max_dist = top_pt;
-  for (ushort i = 0; i < pc->size(); i++)
+  for (ushort k = 0; k < (ushort)pc->size(); k++)
   {
-    if (i == top_pt)
+    if (k == top_pt)
       continue;
-    if (distances[i] > distances[max_dist])
+    if (distances[k] > distances[max_dist])
     {
-      max_dist = i;
+      max_dist = k;
     }
-    if (distances[i] < distances[min_dist])
+    if (distances[k] < distances[min_dist])
     {
-      min_dist = i;
+      min_dist = k;
     }
   }
 
@@ -263,8 +270,6 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
     rightbottom_pt = min_dist;
   }
 
-  std::cout << lefttop_pt << righttop_pt << rightbottom_pt << leftbottom_pt << std::endl;
-
   // Fill vector with sorted centers
   pts_vec[0] = pc->points[lefttop_pt];     // lt
   pts_vec[1] = pc->points[righttop_pt];    // rt
@@ -272,7 +277,7 @@ void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   pts_vec[3] = pc->points[leftbottom_pt];  // lb
 }
 
-void colourCenters(const std::vector<pcl::PointXYZ> pc,
+void colourCenters(std::vector<pcl::PointXYZ> &pc,
                    pcl::PointCloud<pcl::PointXYZI>::Ptr coloured)
 {
   float intensity = 0;
@@ -285,6 +290,24 @@ void colourCenters(const std::vector<pcl::PointXYZ> pc,
 
     cc.intensity = intensity;
     coloured->push_back(cc);
+    intensity += 0.3;
+  }
+}
+
+void colourCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
+                   pcl::PointCloud<pcl::PointXYZI>::Ptr pc_coloured)
+{
+  float intensity = 0;
+  for (int i = 0; i < 4; i++)
+  {
+    pcl::PointXYZI cc;
+    
+    cc.x = pc->at(i).x;
+    cc.y = pc->at(i).y;
+    cc.z = pc->at(i).z;
+    cc.intensity = intensity;
+
+    pc_coloured->push_back(cc);
     intensity += 0.3;
   }
 }

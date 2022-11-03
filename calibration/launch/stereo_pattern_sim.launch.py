@@ -20,6 +20,8 @@ def generate_launch_description():
     right_raw_image_topic = LaunchConfiguration('right_raw_image_topic')
     right_rect_image_topic = LaunchConfiguration('right_rect_image_topic')
     right_camera_topic = LaunchConfiguration('right_camera_topic')
+    disparity_topic = LaunchConfiguration('disparity_topic')
+    cloud_topic = LaunchConfiguration('cloud_topic')
     frame_name = LaunchConfiguration('frame_name')
     sensor_id = LaunchConfiguration('sensor_id')
 
@@ -47,6 +49,12 @@ def generate_launch_description():
     )
     right_camera_topic_launch_arg = DeclareLaunchArgument(
         'right_camera_topic', default_value=[camera_name, '/right_image/camera_info']
+    )
+    disparity_topic_launch_arg = DeclareLaunchArgument(
+        'disparity_topic', default_value='/disparity'
+    )
+    cloud_topic_launch_arg = DeclareLaunchArgument(
+        'cloud_topic', default_value='/cloud'
     )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'
@@ -80,7 +88,7 @@ def generate_launch_description():
     full_dp = LaunchConfiguration('full_dp')
 
     approximate_sync_launch_arg = DeclareLaunchArgument(
-        name='approximate_sync', default_value='False',
+        name='approximate_sync', default_value='True',
         description='Whether to use approximate synchronization of topics. Set to true if '
                     'the left and right cameras do not produce exactly synced timestamps.'
     )
@@ -171,7 +179,7 @@ def generate_launch_description():
 
     image_proc_container = ComposableNodeContainer(
         name=['image_proc_', sensor_id],
-        namespace=camera_name,
+        namespace='',
         package='rclcpp_components',
         executable='component_container',
         composable_node_descriptions=[
@@ -203,8 +211,8 @@ def generate_launch_description():
     """Generate launch description with multiple components."""
     stereo_image_proc_container = ComposableNodeContainer(
         name=['disparity_', sensor_id],
-        namespace=camera_name,
         package='rclcpp_components',
+        namespace='',
         executable='component_container',
         composable_node_descriptions=[
                 ComposableNode(
@@ -234,6 +242,7 @@ def generate_launch_description():
                         ('left/camera_info', left_camera_topic),
                         ('right/image_rect', right_rect_image_topic),
                         ('right/camera_info', right_camera_topic),
+                        ('disparity', disparity_topic)
                     ]),
                 ComposableNode(
                     package='stereo_image_proc',
@@ -248,7 +257,9 @@ def generate_launch_description():
                     remappings=[
                         ('left/camera_info', left_camera_topic),
                         ('right/camera_info', right_camera_topic),
-                        ('left/image_rect_color', left_rect_image_topic)
+                        ('disparity', disparity_topic),
+                        ('left/image_rect_color', left_rect_image_topic),
+                        ('points2', cloud_topic)
                     ])
         ],
         output=stdout,
@@ -259,10 +270,9 @@ def generate_launch_description():
         package='opencv_apps',
         executable='edge_detection',
         name=['opencv_', sensor_id],
-        namespace=camera_name,
         remappings=[
             ('image', left_rect_image_topic),
-            ('edge', 'edge_detection/image')
+            ('edge', 'edge/image')
         ]
     )
 
@@ -270,13 +280,13 @@ def generate_launch_description():
         package='calibration',
         executable='disp_masker',
         name=['disp_masker_', sensor_id],
-        namespace=camera_name,
         remappings=[
-            ('image', 'disparity'),
-            ('mask', 'edge_detection/image'),
-            ('output', 'edges_disparity')
+            ('image', disparity_topic),
+            ('mask', 'edge/image'),
+            ('output', ['edge', disparity_topic])
         ],
         parameters=[{
+            'disp_in_image': True,
             'edges_threshold': 128
         }]
     )
@@ -284,9 +294,9 @@ def generate_launch_description():
     """Generate launch description with multiple components."""
     pointclouder_edges_container = ComposableNodeContainer(
         name=['pointclouder_edges'],
-        namespace=camera_name,
         package='rclcpp_components',
         executable='component_container',
+        namespace='',
         composable_node_descriptions=[
                 ComposableNode(
                     package='stereo_image_proc',
@@ -300,9 +310,9 @@ def generate_launch_description():
                     remappings=[
                         ('left/camera_info', left_camera_topic),
                         ('right/camera_info', right_camera_topic),
-                        ('left/image_rect_color', 'edge_detection/image'),
-                        ('disparity', 'edges_disparity'),
-                        ('points2', 'edge_points2')
+                        ('left/image_rect_color', 'edge/image'),
+                        ('disparity', ['edge', disparity_topic]),
+                        ('points2', ['edge', cloud_topic])
                     ])
         ],
         output=stdout
@@ -311,8 +321,8 @@ def generate_launch_description():
     """Generate launch description with multiple components."""
     stereo_pcl_container = ComposableNodeContainer(
         name=['stereo_pcl_', sensor_id],
-        namespace=camera_name,
         package='rclcpp_components',
+        namespace='',
         executable='component_container',
         composable_node_descriptions=[
                 ComposableNode(
@@ -320,13 +330,13 @@ def generate_launch_description():
                     plugin='pcl_ros::PassThrough',
                     name=['edges_pass_through_z'],
                     remappings=[
-                        ('input', 'edge_points2'),
-                        ('output', 'edge_z_filtered_cloud')
+                        ('input', ['edge', cloud_topic]),
+                        ('output', 'edge/z_filtered_cloud')
                     ],
                     parameters=[{
                         'filter_field_name': 'z',
-                        'filter_limit_min': 0.8,
-                        'filter_limit_max': 3,
+                        'filter_limit_min': -100.0,
+                        'filter_limit_max': 100.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                         'keep_organized': False
@@ -336,40 +346,42 @@ def generate_launch_description():
                     plugin='pcl_ros::PassThrough',
                     name=['full_pass_through_z'],
                     remappings=[
-                        ('input', 'points2'),
+                        ('input', cloud_topic),
                         ('output', 'z_filtered_cloud')
                     ],
                     parameters=[{
 
                         'filter_field_name': 'z',
-                        'filter_limit_min': 0.8,
-                        'filter_limit_max': 3,
+                        'filter_limit_min': -100.0,
+                        'filter_limit_max': 100.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                         'keep_organized': False
                     }]),
-                ComposableNode(
-                    package='pcl_ros',
-                    plugin='pcl_ros::ExtractIndices',
-                    name=['extract_plane_indices'],
-                    remappings=[
-                        ('input', 'z_filtered_cloud'),
-                        ('indices', '/planar_segmentation/inliers')
-                    ],
-                    parameters=[{
-                        'negative': False
-                    }]),
-                ComposableNode(
-                    package='pcl_ros',
-                    plugin='pcl_ros::ExtractIndices',
-                    name=['extract_circle_indices'],
-                    remappings=[
-                        ('input', '/laser2cam_calibration/z_filtered_cloud'),
-                        ('indices', '/laser2cam_calibration/inliers')
-                    ],
-                    parameters=[{
-                        'negative': False
-                    }])
+                # ComposableNode(
+                #     package='pcl_ros',
+                #     plugin='pcl_ros::ExtractIndices',
+                #     name=['extract_plane_indices'],
+                #     remappings=[
+                #         ('input', 'z_filtered_cloud'),
+                #         ('indices', '/planar_segmentation/inliers'),
+                #         ('output', 'plane_cloud')
+                #     ],
+                #     parameters=[{
+                #         'negative': False
+                #     }]),
+                # ComposableNode(
+                #     package='pcl_ros',
+                #     plugin='pcl_ros::ExtractIndices',
+                #     name=['extract_circle_indices'],
+                #     remappings=[
+                #         ('input', '/sngs_calibration/z_filtered_cloud'),
+                #         ('indices', '/sngs_calibration/inliers'),
+                #         ('output', 'plane_cloud')
+                #     ],
+                #     parameters=[{
+                #         'negative': False
+                #     }])
         ],
         output=stdout
     )
@@ -378,7 +390,6 @@ def generate_launch_description():
         package='calibration',
         executable='plane_segmentation',
         name=['planar_segmentation_', sensor_id],
-        namespace=camera_name,
         remappings=[
             ('input', 'z_filtered_cloud')
         ],
@@ -394,9 +405,8 @@ def generate_launch_description():
         package='calibration',
         executable='stereo_pattern',
         name=['stereo_pattern_', sensor_id],
-        namespace=camera_name,
         remappings=[
-            ('cloud2', 'edge_z_filtered_cloud'),
+            ('cloud2', 'edge/z_filtered_cloud'),
             ('cam_plane_coeffs', '/planar_segmentation/model')
         ]
     )
@@ -418,6 +428,8 @@ def generate_launch_description():
         right_image_raw_topic_launch_arg,
         right_image_rect_topic_launch_arg,
         right_camera_topic_launch_arg,
+        disparity_topic_launch_arg,
+        cloud_topic_launch_arg,
         frame_name_launch_arg,
         sensor_id_launch_arg,
         #region Configureable

@@ -23,8 +23,8 @@
 class OverlayImage : public rclcpp::Node
 {
 public:
-    typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo, sensor_msgs::msg::PointCloud2> exact_policy;
-    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo, sensor_msgs::msg::PointCloud2> approximate_policy;
+    typedef message_filters::sync_policies::ExactTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo, sensor_msgs::msg::PointCloud2> ExactSync;
+    typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo, sensor_msgs::msg::PointCloud2> ApproxSync;
     OverlayImage(const rclcpp::NodeOptions &options);
     ~OverlayImage();
 
@@ -56,8 +56,8 @@ private:
     message_filters::Subscriber<sensor_msgs::msg::PointCloud2> cloud_sub_;
 
     /** \brief Synchronized inputs.*/
-    std::shared_ptr<message_filters::Synchronizer<exact_policy>> sync_inputs_e_;
-    std::shared_ptr<message_filters::Synchronizer<approximate_policy>> sync_inputs_a_;
+    std::shared_ptr<message_filters::Synchronizer<ExactSync>> sync_inputs_e_;
+    std::shared_ptr<message_filters::Synchronizer<ApproxSync>> sync_inputs_a_;
 
     int max_image_queue_size_ = 10;
     int max_cloud_queue_size_ = 10;
@@ -67,6 +67,8 @@ private:
     cv::Mat distCoeffs_;
 
     tf2::Transform transform_;
+
+    std::vector<double> pose_;
 
     std::vector<double> rotation_{3};
 

@@ -58,10 +58,10 @@ private:
     // void camera_to_lidar(sensor_msgs::msg::PointCloud2::ConstPtr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_out);
 
     // Pubs Declaration
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clusters_sensor2_pub_, clusters_sensor1_pub_;
+    // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clusters_sensor2_pub_, clusters_sensor1_pub_;
     // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr both_centroids_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colour_sensor2_pub_, colour_sensor1_pub_;
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr iterations_pub_;
+    // rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr iterations_pub_;
 
     // Subs Declaration
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
@@ -85,15 +85,15 @@ private:
 
     int max_queue_size_ = 10;
 
-    std::vector<pcl::PointXYZ> sensor1_vector_{4}, sensor2_vector_{4};
+    // std::vector<pcl::PointXYZ> sensor1_vector_{4}, sensor2_vector_{4};
 
     geometry_msgs::msg::TransformStamped tf_sensor1_sensor2_;
     tf2::Stamped<tf2::Transform> tf2_sensor1_s2_;
 
     std::string sensor1_frame_id_ = "";
-    std::string sensor1_rotated_frame_id_ = "";
+    // std::string sensor1_rotated_frame_id_ = "";
     std::string sensor2_frame_id_ = "";
-    std::string sensor2_rotated_frame_id_ = "";
+    // std::string sensor2_rotated_frame_id_ = "";
 
     tf2::Transform transf_;
 
@@ -122,7 +122,7 @@ private:
     bool sync_iterations_;
     bool save_to_file_;
     bool publish_tf_;
-    bool is_sensor1_cam_, is_sensor2_cam_;
+    bool sensor1_is_cam_, sensor2_is_cam_;
     bool skip_warmup_, single_pose_mode_;
     bool results_every_pose_;
 };

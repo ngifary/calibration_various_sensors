@@ -39,8 +39,8 @@ private:
 
   // Pubs Definition
   // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_, cumulative_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr qr_pub_, centers_cloud_pub_;
-  rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr centers_pub_;
+  // rclcpp::Publisher<calibration_interfaces::msg::ClusterCentroids>::SharedPtr clusters_pub_;
 
   // Subs Definition
   message_filters::Subscriber<sensor_msgs::msg::Image> image_sub_;

@@ -48,11 +48,12 @@ MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
   if (DEBUG)
   {
     // qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
-    centers_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_pts_cloud", 1);
+    // centers_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_pts_cloud", 1);
     // cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_cloud", 1);
   }
-  qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
-  clusters_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  // qr_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("qr_cloud", 1);
+  centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
+  // clusters_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
 
   initializeParams();
 
@@ -577,7 +578,7 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
       sensor_msgs::msg::PointCloud2 ros_pointcloud;
       pcl::toROSMsg(*centers_cloud, ros_pointcloud); // circles_cloud
       ros_pointcloud.header = msg->header;
-      qr_pub_->publish(ros_pointcloud);
+      centers_pub_->publish(ros_pointcloud);
 
       if (DEBUG)
         RCLCPP_INFO(this->get_logger(), "[%s] Pattern centers published.", get_name());

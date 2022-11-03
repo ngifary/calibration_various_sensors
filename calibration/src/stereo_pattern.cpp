@@ -20,13 +20,14 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
     coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("coeff_pub_", 1);
     plane_edges_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("plane_edges_pub_", 1);
     xy_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("xy_pattern_pub_", 1);
-    cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_pub_", 1);
+    // cumulative_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("cumulative_pub_", 1);
   }
-  final_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
+  centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
+  // final_pub_ = this->create_publisher<calibration_interfaces::msg::ClusterCentroids>("centers_cloud", 1);
 
-  cumulative_cloud_ = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  // cumulative_cloud_ = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
-  sync_ = std::make_shared<message_filters::Synchronizer<message_filters::sync_policies::ExactTime<sensor_msgs::msg::PointCloud2, pcl_msgs::msg::ModelCoefficients>>>(max_queue_size_);
+  sync_ = std::make_shared<message_filters::Synchronizer<ExactSync>>(max_queue_size_);
 
   sync_->connectInput(camera_cloud_sub_, cam_plane_coeffs_sub_);
 
@@ -41,32 +42,32 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
   // ROS param callback
   auto ret = this->add_on_set_parameters_callback(std::bind(&StereoPattern::param_callback, this, std::placeholders::_1));
 
-  warmup_sub_ = this->create_subscription<std_msgs::msg::Empty>(
-      "warmup_switch", 100, std::bind(&StereoPattern::warmup_callback, this, std::placeholders::_1));
+  // warmup_sub_ = this->create_subscription<std_msgs::msg::Empty>(
+  //     "warmup_switch", 100, std::bind(&StereoPattern::warmup_callback, this, std::placeholders::_1));
 
-  if (skip_warmup_)
-  {
-    RCLCPP_WARN(this->get_logger(), "Skipping warmup");
-    WARMUP_DONE = true;
-  }
+  // if (skip_warmup_)
+  // {
+  //   RCLCPP_WARN(this->get_logger(), "Skipping warmup");
+  //   WARMUP_DONE = true;
+  // }
 
-  // Just for statistics
-  if (save_to_file_)
-  {
-    std::ostringstream os;
-    os << getenv("HOME") << "/v2c_experiments/" << csv_name;
-    if (save_to_file_)
-    {
-      if (DEBUG)
-        RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
-      savefile_.open(os.str().c_str());
-      savefile_ << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
-                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
-                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
-                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
-               << std::endl;
-    }
-  }
+  // // Just for statistics
+  // if (save_to_file_)
+  // {
+  //   std::ostringstream os;
+  //   os << getenv("HOME") << "/v2c_experiments/" << csv_name;
+  //   if (save_to_file_)
+  //   {
+  //     if (DEBUG)
+  //       RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
+  //     savefile_.open(os.str().c_str());
+  //     savefile_ << "det1_x, det1_y, det1_z, det2_x, det2_y, det2_z, det3_x, "
+  //                  "det3_y, det3_z, det4_x, det4_y, det4_z, cent1_x, cent1_y, "
+  //                  "cent1_z, cent2_x, cent2_y, cent2_z, cent3_x, cent3_y, "
+  //                  "cent3_z, cent4_x, cent4_y, cent4_z, it"
+  //               << std::endl;
+  //   }
+  // }
 }
 
 StereoPattern::~StereoPattern()
@@ -108,30 +109,30 @@ void StereoPattern::initializeParams()
   desc.description = "";
   target_radius_tolerance_ = declare_parameter(desc.name, 0.1);
 
-  desc.name = "min_centers_found";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
-  desc.description = "minimum circle to be detected (-)";
-  min_centers_found_ = declare_parameter(desc.name, TARGET_NUM_CIRCLES);
+  // desc.name = "min_centers_found";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER;
+  // desc.description = "minimum circle to be detected (-)";
+  // TARGET_NUM_CIRCLES = declare_parameter(desc.name, TARGET_NUM_CIRCLES);
 
-  desc.name = "cluster_tolerance";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "maximal distance to still be included in a cluster (m)";
-  cluster_tolerance_ = declare_parameter(desc.name, 0.05);
+  // desc.name = "cluster_tolerance";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "maximal distance to still be included in a cluster (m)";
+  // cluster_tolerance_ = declare_parameter(desc.name, 0.05);
 
-  desc.name = "min_cluster_factor";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  desc.description = "minimum cluster size to frame ratio (-)";
-  min_cluster_factor_ = declare_parameter(desc.name, 0.5);
+  // desc.name = "min_cluster_factor";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+  // desc.description = "minimum cluster size to frame ratio (-)";
+  // min_cluster_factor_ = declare_parameter(desc.name, 0.5);
 
-  desc.name = "skip_warmup";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "skip warmup";
-  skip_warmup_ = declare_parameter(desc.name, false);
+  // desc.name = "skip_warmup";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "skip warmup";
+  // skip_warmup_ = declare_parameter(desc.name, false);
 
-  desc.name = "save_to_file";
-  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  desc.description = "save result to a file";
-  save_to_file_ = declare_parameter(desc.name, false);
+  // desc.name = "save_to_file";
+  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  // desc.description = "save result to a file";
+  // save_to_file_ = declare_parameter(desc.name, false);
 }
 
 void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
@@ -140,9 +141,7 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[Stereo] Processing image...");
 
-  images_proc_++;
-
-  header_ = camera_cloud->header;
+  // images_proc_++;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cam_cloud(
       new pcl::PointCloud<pcl::PointXYZ>());
@@ -292,9 +291,8 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
 
   } while (xy_cloud->points.size() > 3);
 
-  if (found_centers.size() <
-      min_centers_found_)
-  { // Usually min_centers_found_ = TARGET_NUM_CIRCLES
+  if (found_centers.size() < TARGET_NUM_CIRCLES)
+  { // Usually TARGET_NUM_CIRCLES = TARGET_NUM_CIRCLES
     // Exit 1: centers not found
     RCLCPP_WARN(this->get_logger(), "Not enough centers: %ld", found_centers.size());
     return;
@@ -380,28 +378,28 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
         cam_plane_coeffs->values[2];
 
     rotated_back_cloud->push_back(center_rotated_back);
-    cumulative_cloud_->push_back(center_rotated_back);
+    // cumulative_cloud_->push_back(center_rotated_back);
   }
 
-  if (save_to_file_)
-  {
-    std::vector<pcl::PointXYZ> sorted_centers;
-    sortPatternCenters(rotated_back_cloud, sorted_centers);
-    for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-         it < sorted_centers.end(); ++it)
-    {
-      savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
-    }
-  }
+  // if (save_to_file_)
+  // {
+  //   std::vector<pcl::PointXYZ> sorted_centers;
+  //   sortPatternCenters(rotated_back_cloud, sorted_centers);
+  //   for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+  //        it < sorted_centers.end(); ++it)
+  //   {
+  //     savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+  //   }
+  // }
 
-  // Publishing "cumulative_cloud_" (centers found from the beginning)
-  if (DEBUG)
-  {
-    sensor_msgs::msg::PointCloud2 cumulative_ros;
-    pcl::toROSMsg(*cumulative_cloud_, cumulative_ros);
-    cumulative_ros.header = camera_cloud->header;
-    cumulative_pub_->publish(cumulative_ros);
-  }
+  // // Publishing "cumulative_cloud_" (centers found from the beginning)
+  // if (DEBUG)
+  // {
+  //   sensor_msgs::msg::PointCloud2 cumulative_ros;
+  //   pcl::toROSMsg(*cumulative_cloud_, cumulative_ros);
+  //   cumulative_ros.header = camera_cloud->header;
+  //   cumulative_pub_->publish(cumulative_ros);
+  // }
 
   pcl_msgs::msg::PointIndices p_ind;
 
@@ -419,71 +417,71 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
     coeff_pub_->publish(m_coeff);
   }
 
-  images_used_++;
-  if (DEBUG)
-  {
-    RCLCPP_INFO(this->get_logger(), "[Stereo] %d/%d frames: %ld pts in cloud", images_used_,
-                images_proc_, cumulative_cloud_->points.size());
-  }
-  pcl::PointCloud<pcl::PointXYZ>::Ptr final_cloud(
-      new pcl::PointCloud<pcl::PointXYZ>);
+  // images_used_++;
+  // if (DEBUG)
+  // {
+  //   RCLCPP_INFO(this->get_logger(), "[Stereo] %d/%d frames: %ld pts in cloud", images_used_,
+  //               images_proc_, cumulative_cloud_->points.size());
+  // }
+  // pcl::PointCloud<pcl::PointXYZ>::Ptr final_cloud(
+  //     new pcl::PointCloud<pcl::PointXYZ>);
 
-  // Compute circles centers
-  if (!WARMUP_DONE)
-  { // Compute clusters from detections in the latest frame
-    getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_, 1, 1);
-  }
-  else
-  { // Use cumulative information from previous frames
-    getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_,
-                      min_cluster_factor_ * images_used_, images_used_);
-    if (final_cloud->points.size() > TARGET_NUM_CIRCLES)
-    {
-      getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_,
-                        3.0 * images_used_ / 4.0, images_used_);
-    }
-  }
+  // // Compute circles centers
+  // if (!WARMUP_DONE)
+  // { // Compute clusters from detections in the latest frame
+  //   getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_, 1, 1);
+  // }
+  // else
+  // { // Use cumulative information from previous frames
+  //   getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_,
+  //                     min_cluster_factor_ * images_used_, images_used_);
+  //   if (final_cloud->points.size() > TARGET_NUM_CIRCLES)
+  //   {
+  //     getCenterClusters(cumulative_cloud_, final_cloud, cluster_tolerance_,
+  //                       3.0 * images_used_ / 4.0, images_used_);
+  //   }
+  // }
 
-  // Exit 4: clustering failed
-  if (final_cloud->points.size() == TARGET_NUM_CIRCLES)
-  {
-    if (save_to_file_)
-    {
-      std::vector<pcl::PointXYZ> sorted_centers;
-      sortPatternCenters(final_cloud, sorted_centers);
-      for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
-           it < sorted_centers.end(); ++it)
-      {
-        savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
-      }
-      savefile_ << cumulative_cloud_->width;
-    }
+  // // Exit 4: clustering failed
+  // if (final_cloud->points.size() == TARGET_NUM_CIRCLES)
+  // {
+  //   if (save_to_file_)
+  //   {
+  //     std::vector<pcl::PointXYZ> sorted_centers;
+  //     sortPatternCenters(final_cloud, sorted_centers);
+  //     for (std::vector<pcl::PointXYZ>::iterator it = sorted_centers.begin();
+  //          it < sorted_centers.end(); ++it)
+  //     {
+  //       savefile_ << it->x << ", " << it->y << ", " << it->z << ", ";
+  //     }
+  //     savefile_ << cumulative_cloud_->width;
+  //   }
 
-    sensor_msgs::msg::PointCloud2 final_ros;
-    pcl::toROSMsg(*final_cloud, final_ros);
-    final_ros.header = camera_cloud->header;
+  //   sensor_msgs::msg::PointCloud2 final_ros;
+  //   pcl::toROSMsg(*final_cloud, final_ros);
+  //   final_ros.header = camera_cloud->header;
 
-    calibration_interfaces::msg::ClusterCentroids to_send;
-    to_send.header = camera_cloud->header;
-    to_send.total_iterations = images_proc_;
-    to_send.cluster_iterations = images_used_;
-    to_send.cloud = final_ros;
+  //   calibration_interfaces::msg::ClusterCentroids to_send;
+  //   to_send.header = camera_cloud->header;
+  //   to_send.total_iterations = images_proc_;
+  //   to_send.cluster_iterations = images_used_;
+  //   to_send.cloud = final_ros;
 
-    final_pub_->publish(to_send);
-  }
+  //   final_pub_->publish(to_send);
+  // }
 
-  if (save_to_file_)
-  {
-    savefile_ << std::endl;
-  }
+  // if (save_to_file_)
+  // {
+  //   savefile_ << std::endl;
+  // }
 
-  // Clear cumulative cloud during warm-up phase
-  if (!WARMUP_DONE)
-  {
-    cumulative_cloud_->clear();
-    images_proc_ = 0;
-    images_used_ = 0;
-  }
+  // // Clear cumulative cloud during warm-up phase
+  // if (!WARMUP_DONE)
+  // {
+  //   cumulative_cloud_->clear();
+  //   images_proc_ = 0;
+  //   images_used_ = 0;
+  // }
 }
 
 rcl_interfaces::msg::SetParametersResult StereoPattern::param_callback(const std::vector<rclcpp::Parameter> &parameters)
@@ -507,18 +505,18 @@ rcl_interfaces::msg::SetParametersResult StereoPattern::param_callback(const std
   return result;
 }
 
-void StereoPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
-{
-  WARMUP_DONE = !WARMUP_DONE;
-  if (WARMUP_DONE)
-  {
-    RCLCPP_INFO(this->get_logger(), "[Stereo] Warm up done, pattern detection started");
-  }
-  else
-  {
-    RCLCPP_INFO(this->get_logger(), "[Stereo] Detection stopped. Warm up mode activated");
-  }
-}
+// void StereoPattern::warmup_callback(const std_msgs::msg::Empty::ConstSharedPtr msg)
+// {
+//   WARMUP_DONE = !WARMUP_DONE;
+//   if (WARMUP_DONE)
+//   {
+//     RCLCPP_INFO(this->get_logger(), "[Stereo] Warm up done, pattern detection started");
+//   }
+//   else
+//   {
+//     RCLCPP_INFO(this->get_logger(), "[Stereo] Detection stopped. Warm up mode activated");
+//   }
+// }
 
 int main(int argc, char **argv)
 {

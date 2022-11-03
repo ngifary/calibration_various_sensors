@@ -16,21 +16,25 @@ double normalizeRange(double range, double gamma = 1.0)
     return std::pow(range, std::abs(gamma)) / (1 + std::pow(range, std::abs(gamma)));
 }
 
-OverlayImage::OverlayImage(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("overlay_image", options)
+OverlayImage::OverlayImage(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("overlay_image", options),
+                                                                                         pose_{0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
 {
     RCLCPP_INFO(this->get_logger(), "Overlay image....");
 
     initializeParams();
 
+    RCLCPP_INFO(get_logger(), "Relative pose of sensor 1 in sensor 2: [%f, %f, %f, %f, %f, %f]", pose_[0], pose_[1], pose_[2],
+                pose_[3], pose_[4], pose_[5]);
+
+    tf2::Vector3 translation(pose_[0], pose_[1], pose_[1]);
+
+    transform_.setOrigin(translation);
+
     tf2::Quaternion quaternion;
 
-    quaternion.setEuler(rotation_[2], rotation_[1], rotation_[0]);
+    quaternion.setRPY(pose_[3], pose_[4], pose_[5]);
 
-    tf2::Matrix3x3 matrix(quaternion);
-
-    tf2::Vector3 vector(translation_[0], translation_[1], translation_[2]);
-
-    transform_ = tf2::Transform(matrix, vector);
+    transform_.setRotation(quaternion);
 
     img_pub_ = image_transport::create_publisher(this, "overlay", imageQoS().get_rmw_qos_profile());
 
@@ -38,7 +42,7 @@ OverlayImage::OverlayImage(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
     cinfo_sub_.subscribe(this, "camera", imageQoS().get_rmw_qos_profile());
     cloud_sub_.subscribe(this, "cloud", cloudQoS().get_rmw_qos_profile());
 
-    sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<approximate_policy>>(std::min(max_image_queue_size_, max_cloud_queue_size_));
+    sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<ApproxSync>>(std::min(max_image_queue_size_, max_cloud_queue_size_));
     sync_inputs_a_->connectInput(image_sub_, cinfo_sub_, cloud_sub_);
     sync_inputs_a_->registerCallback(std::bind(&OverlayImage::callback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
@@ -52,17 +56,10 @@ void OverlayImage::initializeParams()
 {
     rcl_interfaces::msg::ParameterDescriptor desc;
 
-    // gamma, transform
-
-    // desc.name = "x";
-    // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-    // desc.description = "x-coordinate";
-    // axis_[0] = declare_parameter(desc.name, 0);
-
-    // desc.name = "y";
-    // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-    // desc.description = "y-coordinate";
-    // axis_[1] = declare_parameter(desc.name, 0);
+    desc.name = "pose";
+    desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE_ARRAY;
+    desc.description = "transformation of sensor 1 in sensor 2";
+    pose_ = declare_parameter(desc.name, pose_);
 }
 
 void OverlayImage::callback(const sensor_msgs::msg::Image::ConstSharedPtr image_msg, const sensor_msgs::msg::CameraInfo::ConstSharedPtr camera_msg, sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_msg)
@@ -110,6 +107,19 @@ void OverlayImage::callback(const sensor_msgs::msg::Image::ConstSharedPtr image_
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xy(new pcl::PointCloud<pcl::PointXYZ>());
 
     lidar_to_camera(cloud_pcl, cloud_xy);
+
+    // cloud_pcl.reset(new pcl::PointCloud<pcl::PointXYZ>());
+
+    // pcl_ros::transformPointCloud(*cloud_xy, *cloud_pcl, transform_);
+
+    // for (int i = 0; i < cloud_pcl->size(); ++i)
+    // {
+    //     cv::Point3f point;
+    //     point.x = cloud_pcl->points[i].x;
+    //     point.y = cloud_pcl->points[i].y;
+    //     point.z = cloud_pcl->points[i].z;
+    //     cloud_cv->push_back(point);
+    // }
 
     for (int i = 0; i < cloud_xy->size(); ++i)
     {
