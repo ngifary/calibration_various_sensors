@@ -14,6 +14,9 @@
 #include "tf2/transform_datatypes.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/impl/utils.h"
+#include "tf2_eigen/tf2_eigen.hpp"
+#include "eigen3/Eigen/Core"
+#include "eigen3/Eigen/Geometry"
 
 #define TARGET_NUM_CIRCLES 4
 #define GEOMETRY_TOLERANCE 0.06
@@ -152,6 +155,22 @@ void camera_to_lidar(pcl::PointCloud<pcl::PointXYZ>::Ptr camera, pcl::PointCloud
   transform.setRotation(quaternion);
 
   pcl_ros::transformPointCloud(*camera, *lidar, transform);
+
+  // Eigen::Vector3f translation(0.0, 0.0, 0.0);
+
+  // float roll = 0.0, pitch = 0.0, yaw = 0.0;
+
+  // Eigen::Quaternionf quaternion;
+
+  // roll = M_PI_2;
+  // pitch = 0.0;
+  // yaw = M_PI_2;
+
+  // quaternion = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
+  //              Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+  //              Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
+
+  // pcl::transformPointCloud(*lidar, *camera, translation, quaternion);
 }
 
 /**
@@ -162,25 +181,21 @@ void camera_to_lidar(pcl::PointCloud<pcl::PointXYZ>::Ptr camera, pcl::PointCloud
  */
 void lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr lidar, pcl::PointCloud<pcl::PointXYZ>::Ptr camera)
 {
-  tf2::Transform transform;
-  tf2::Quaternion quaternion;
-  tf2Scalar roll = 0.0, pitch = 0.0, yaw = 0.0;
-  // roll = M_PI_2;
-  // pitch = 0.0;
-  // yaw = M_PI_2;
-  quaternion.setW(0.5);
-  quaternion.setX(-0.5);
-  quaternion.setY(0.5);
-  quaternion.setZ(0.5);
+  Eigen::Vector3f translation(0.0, 0.0, 0.0);
 
-  // quaternion.setRPY(1.57, 0.0, 1.57);
-  tf2::impl::getEulerYPR(quaternion, yaw, pitch, roll);
+  float roll = 0.0, pitch = 0.0, yaw = 0.0;
 
-  std::cout << "roll: " << roll << " pitch: " << pitch << " yaw: " << yaw << std::endl;
+  Eigen::Quaternionf quaternion;
 
-  transform.setRotation(quaternion);
+  roll = M_PI_2;
+  pitch = 0.0;
+  yaw = M_PI_2;
 
-  pcl_ros::transformPointCloud(*lidar, *camera, transform);
+  quaternion = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
+               Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+               Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
+
+  pcl::transformPointCloud(*lidar, *camera, translation, quaternion);
 }
 
 void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
@@ -301,7 +316,7 @@ void colourCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
   for (int i = 0; i < 4; i++)
   {
     pcl::PointXYZI cc;
-    
+
     cc.x = pc->at(i).x;
     cc.y = pc->at(i).y;
     cc.z = pc->at(i).z;

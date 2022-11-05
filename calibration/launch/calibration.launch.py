@@ -48,8 +48,8 @@ def generate_launch_description():
 
     laser2cam_calibration_node = Node(
         package='calibration',
-        executable='laser2cam_calibration',
-        name='laser2cam_calibration',
+        executable='calibration_core',
+        name='calibration_core',
         remappings=[
                 ('cloud1', ['/', sensor1_type, '_pattern_',
                  sensor1_id, '/centers_cloud']),

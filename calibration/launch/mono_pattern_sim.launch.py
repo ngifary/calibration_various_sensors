@@ -46,8 +46,8 @@ def generate_launch_description():
         executable='mono_qr_pattern',
         name=['mono_qr_pattern_', sensor_id],
         remappings=[
-            ('centers_cloud', ['mono_qr_pattern_',
-             sensor_id, '/centers_cloud'])
+            ('centers_msg', ['mono_qr_pattern_',
+             sensor_id, '/centers_msg'])
         ],
         parameters=[{
             'image_topic': image_topic,

@@ -94,7 +94,7 @@ def generate_launch_description():
         name=['lidar_pattern_', sensor_id],
         remappings=[
             ('cloud1', ['/lidar_pattern_', sensor_id, '/zyx_filtered']),
-            ('centers_cloud', ['/lidar_pattern_', sensor_id, '/centers_cloud'])
+            ('centers_msg', ['/lidar_pattern_', sensor_id, '/centers_msg'])
         ],
         parameters=[{
             'passthrough_radius_min': 1.0,

@@ -358,30 +358,6 @@ def generate_launch_description():
                         'max_queue_size': 1,
                         'keep_organized': False
                     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::ExtractIndices',
-                #     name=['extract_plane_indices'],
-                #     remappings=[
-                #         ('input', 'z_filtered_cloud'),
-                #         ('indices', '/planar_segmentation/inliers'),
-                #         ('output', 'plane_cloud')
-                #     ],
-                #     parameters=[{
-                #         'negative': False
-                #     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::ExtractIndices',
-                #     name=['extract_circle_indices'],
-                #     remappings=[
-                #         ('input', '/sngs_calibration/z_filtered_cloud'),
-                #         ('indices', '/sngs_calibration/inliers'),
-                #         ('output', 'plane_cloud')
-                #     ],
-                #     parameters=[{
-                #         'negative': False
-                #     }])
         ],
         output=stdout
     )
@@ -407,7 +383,9 @@ def generate_launch_description():
         name=['stereo_pattern_', sensor_id],
         remappings=[
             ('cloud2', 'edge/z_filtered_cloud'),
-            ('cam_plane_coeffs', '/planar_segmentation/model')
+            ('cam_plane_coeffs', '/planar_segmentation/model'),
+            ('centers_msg', ['stereo_pattern_',
+             sensor_id, '/centers_msg'])
         ]
     )
 

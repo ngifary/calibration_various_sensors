@@ -1,12 +1,12 @@
 /*
-  laser2cam_calibration: Perform the registration step
+  calibration: Derive transformation from the cloud points correspondences
 */
 
-#include "sngs_calibration.hpp"
+#include "calibration_core.hpp"
 
-Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("registration", options),
-                                                                                         tf_buffer_(this->get_clock()),
-                                                                                         tf_listener_(tf_buffer_)
+Calibration::Calibration(const rclcpp::NodeOptions &options = rclcpp::NodeOptions{}) : Node("registration", options),
+                                                                                       tf_buffer_(this->get_clock()),
+                                                                                       tf_listener_(tf_buffer_)
 {
     RCLCPP_INFO(this->get_logger(), "Calibration Starting....");
 
@@ -18,34 +18,15 @@ Registration::Registration(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
     sensor1_sub_.subscribe(this, "cloud1", cloudQoS().get_rmw_qos_profile());
     sensor2_sub_.subscribe(this, "cloud2", cloudQoS().get_rmw_qos_profile());
 
-    sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<approximate_policy>>(max_queue_size_);
+    sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<ApproxSync>>(max_queue_size_);
     sync_inputs_a_->connectInput(sensor1_sub_, sensor2_sub_);
-    sync_inputs_a_->registerCallback(std::bind(&Registration::callback, this, std::placeholders::_1, std::placeholders::_2));
-
-    // Saving results to file
-    if (save_to_file_)
-    {
-        std::ostringstream os;
-        os << getenv("HOME") << "/l2c_experiments/" << csv_name_;
-        if (save_to_file_)
-        {
-            if (DEBUG)
-                RCLCPP_INFO(this->get_logger(), "Opening %s", os.str().c_str());
-            savefile_.open(os.str().c_str());
-            savefile_ << "it, x, y, z, r, p, y, used_sen1, used_sen2, total_sen1, "
-                         "total_sen2"
-                      << std::endl;
-        }
-    }
+    sync_inputs_a_->registerCallback(std::bind(&Calibration::callback, this, std::placeholders::_1, std::placeholders::_2));
 }
 
-Registration::~Registration()
+Calibration::~Calibration()
 {
     sensor1_sub_.unsubscribe();
     sensor2_sub_.unsubscribe();
-
-    if (save_to_file_)
-        savefile_.close();
 
     // Save calibration params to launch file for testing
 
@@ -151,7 +132,7 @@ Registration::~Registration()
     RCLCPP_INFO(this->get_logger(), "Shutting down....");
 }
 
-void Registration::initializeParams()
+void Calibration::initializeParams()
 {
     rcl_interfaces::msg::ParameterDescriptor desc;
 
@@ -165,11 +146,6 @@ void Registration::initializeParams()
     desc.description = "";
     sensor2_is_cam_ = declare_parameter(desc.name, sensor2_is_cam_);
 
-    desc.name = "save_to_file";
-    desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-    desc.description = "";
-    save_to_file_ = declare_parameter(desc.name, false);
-
     desc.name = "publish_tf";
     desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
     desc.description = "";
@@ -181,79 +157,88 @@ void Registration::initializeParams()
     csv_name_ = declare_parameter(desc.name, "registration_" + currentDateTime() + ".csv");
 }
 
-tf2::Transform Registration::calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl)
+Eigen::Affine3f Calibration::calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl)
 {
-
-    std::vector<tf2::Vector3> sensor1_pts{4}, sensor2_pts{4};
+    std::vector<Eigen::Vector3f> sensor1_pts, sensor2_pts;
     for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
     {
-        sensor1_pts[i].setX(sensor1_pcl.at(i).x);
-        sensor1_pts[i].setY(sensor1_pcl.at(i).y);
-        sensor1_pts[i].setZ(sensor1_pcl.at(i).z);
+        Eigen::Vector3f point;
 
-        sensor2_pts[i].setX(sensor2_pcl.at(i).x);
-        sensor2_pts[i].setY(sensor2_pcl.at(i).y);
-        sensor2_pts[i].setZ(sensor2_pcl.at(i).z);
+        point = sensor1_pcl[i].getVector3fMap();
+        sensor1_pts.push_back(point);
+
+        point = sensor2_pcl[i].getVector3fMap();
+        sensor2_pts.push_back(point);
     }
 
-    tf2::Transform tf_sensor1_sensor2;
-
-    tf2::Vector3 translation;
-    tf2::Vector3 rotation;
-    // Get rotation by comparing the normal vector of a planar triangle (4C3) from each sensor
-    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++) // 012 123 230 301 with modulus 4
+    // Get the board centroids
+    Eigen::Vector3f board1_centroids(0.0, 0.0, 0.0);
+    Eigen::Vector3f board2_centroids(0.0, 0.0, 0.0);
+    for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
     {
-        ushort first = j % 4, second = (j + 1) % 4, third = (j + 2) % 4;
-
-        tf2::Vector3 triangle1_pt1 = sensor1_pts[first];
-        tf2::Vector3 triangle1_pt2 = sensor1_pts[second];
-        tf2::Vector3 triangle1_pt3 = sensor1_pts[third];
-
-        tf2::Vector3 triangle2_pt1 = sensor2_pts[first];
-        tf2::Vector3 triangle2_pt2 = sensor2_pts[second];
-        tf2::Vector3 triangle2_pt3 = sensor2_pts[third];
-
-        // Get translation
-        translation += (triangle2_pt1 - triangle1_pt1);
-
-        tf2::Vector3 triangle1_normal = (triangle1_pt1 - triangle1_pt2).cross(triangle1_pt1 - triangle1_pt3);
-        tf2::Vector3 triangle2_normal = (triangle2_pt1 - triangle2_pt2).cross(triangle2_pt1 - triangle2_pt3);
-
-        // Get quaternion cos(theta/2) + sin(theta/2)*(x'i + y'j + z'k) = w + xi + yj + zk
-        double theta = triangle1_normal.angle(triangle2_normal);                  // theta
-        tf2::Vector3 axis = triangle1_normal.cross(triangle2_normal).normalize(); // x'i + y'j + z'k
-
-        tf2::Quaternion quaternion;
-        quaternion.setW(std::cos(theta / 2));
-        quaternion.setX(std::sin(theta / 2) * axis.getX());
-        quaternion.setY(std::sin(theta / 2) * axis.getY());
-        quaternion.setZ(std::sin(theta / 2) * axis.getZ());
-
-        double roll, pitch, yaw;
-        tf2::impl::getEulerYPR(quaternion, yaw, pitch, roll);
-        rotation.setX(rotation.getX() + roll);
-        rotation.setY(rotation.getY() + pitch);
-        rotation.setZ(rotation.getZ() + yaw);
+        board1_centroids += sensor1_pts.at(i);
+        board2_centroids += sensor2_pts.at(i);
     }
-    translation = translation / 4;
-    tf_sensor1_sensor2.setOrigin(translation);
-    rotation = rotation / 4;
-    tf2::Quaternion quaternion;
-    quaternion.setRPY(rotation.getX(), rotation.getY(), rotation.getZ());
-    tf_sensor1_sensor2.setRotation(quaternion);
+    board1_centroids /= TARGET_NUM_CIRCLES;
+    board2_centroids /= TARGET_NUM_CIRCLES;
 
-    RCLCPP_INFO(get_logger(), "The transformation of sensor 1 to sensor 2 is: [%f, %f, %f]",
-                translation.getX(),
-                translation.getY(),
-                translation.getZ());
+    // Relative rotation of sensor 1 in sensor 2 using SVD
+    Eigen::Vector3f sensor_rotation(0.0, 0.0, 0.0);
+    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
+    {
+        Eigen::Vector3f vector1_point = sensor1_pts[j] - board1_centroids;
+        Eigen::Vector3f vector2_point = sensor2_pts[j] - board2_centroids;
+
+        Eigen::Quaternionf quaternion;
+        quaternion.setFromTwoVectors(vector1_point, vector2_point);
+
+        sensor_rotation += quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
+    }
+    sensor_rotation /= TARGET_NUM_CIRCLES;
+
+    Eigen::Quaternionf quaternion;
+
+    quaternion = Eigen::AngleAxisf(sensor_rotation[0], Eigen::Vector3f::UnitX()) *
+                 Eigen::AngleAxisf(sensor_rotation[1], Eigen::Vector3f::UnitY()) *
+                 Eigen::AngleAxisf(sensor_rotation[2], Eigen::Vector3f::UnitZ());
+
+    // Relative translation of sensor 1 in sensor 2
+    Eigen::Vector3f sensor_translation(0.0, 0.0, 0.0);
+    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
+    {
+        sensor_translation += board2_centroids - (quaternion * board1_centroids);
+    }
+    sensor_translation /= TARGET_NUM_CIRCLES;
+
+    Eigen::Matrix4f mat;
+    mat.setIdentity();
+    mat.block<3, 3>(0, 0) = quaternion.toRotationMatrix();
+    mat.block<3, 1>(0, 3) = sensor_translation;
+
+    Eigen::Affine3f tf_sensor1_sensor2(mat);
+
+    if (DEBUG)
+    {
+        Eigen::VectorXf pose(6, 1);
+        pose.block<3, 1>(0, 0) = sensor_translation;
+        pose.block<3, 1>(3, 0) = sensor_rotation;
+
+        RCLCPP_INFO(get_logger(), "The transformation of sensor 1 to sensor 2 is: [%f, %f, %f, %f, %f, %f]", pose[0], pose[1], pose[2], pose[3], pose[4], pose[5]);
+
+        Eigen::Affine3f tf_sensor2_sensor1 = tf_sensor1_sensor2.inverse();
+        pose.block<3, 1>(0, 0) = tf_sensor2_sensor1.translation();
+        pose.block<3, 1>(3, 0) = tf_sensor2_sensor1.rotation().eulerAngles(0, 1, 2);
+
+        RCLCPP_INFO(get_logger(), "The transformation of sensor 2 to sensor 1 is: [%f, %f, %f, %f, %f, %f]", pose[0], pose[1], pose[2], pose[3], pose[4], pose[5]);
+    }
 
     return tf_sensor1_sensor2;
 }
 
-void Registration::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor1_centroids, const sensor_msgs::msg::PointCloud2::ConstSharedPtr sensor2_centroids)
+void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedPtr sensor1_centroids, const calibration::msg::CircleCentroids::ConstSharedPtr sensor2_centroids)
 {
+
     RCLCPP_INFO(this->get_logger(), "Cluster pair correspondence received!.");
-    RCLCPP_INFO(get_logger(), "[Time stamp] Sensor 1: [%i, %i] and Sensor 2: [%i, %i]", sensor1_centroids->header.stamp.sec, sensor1_centroids->header.stamp.nanosec, sensor2_centroids->header.stamp.sec, sensor2_centroids->header.stamp.nanosec);
 
     sensor1_frame_id_ = sensor1_centroids->header.frame_id;
     sensor2_frame_id_ = sensor2_centroids->header.frame_id;
@@ -263,91 +248,78 @@ void Registration::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     pcl::PointCloud<pcl::PointXYZI>::Ptr isensor1_cloud(new pcl::PointCloud<pcl::PointXYZI>),
         isensor2_cloud(new pcl::PointCloud<pcl::PointXYZI>);
 
-    fromROSMsg(*sensor1_centroids, *sensor1_cloud);
-    fromROSMsg(*sensor2_centroids, *sensor2_cloud);
+    fromROSMsg(sensor1_centroids->centers, *sensor1_cloud);
+    fromROSMsg(sensor2_centroids->centers, *sensor2_cloud);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr aux(new pcl::PointCloud<pcl::PointXYZ>);
 
-    // for (ushort i = 0; i < 4; i++)
-    // {
-    //     RCLCPP_INFO(get_logger(), "[input] %ith point of camera: [%f, %f, %f]", i, sensor1_cloud->at(i).x, sensor1_cloud->at(i).y, sensor1_cloud->at(i).z);
-    //     RCLCPP_INFO(get_logger(), "[input] %ith point of lidar: [%f, %f, %f]", i, sensor2_cloud->at(i).x, sensor2_cloud->at(i).y, sensor2_cloud->at(i).z);
-    // }
-
-    if (sensor1_is_cam_)
+    std::string sensor1_real_frame_id, sensor2_real_frame_id;
+    if (sensor1_centroids->sensor_type != sensor1_centroids->LIDAR)
     {
         camera_to_lidar(sensor1_cloud, aux);
         sensor1_cloud.swap(aux);
+        sensor1_real_frame_id = "rotated_" + sensor1_frame_id_;
+    }
+    else
+    {
+        sensor1_real_frame_id = sensor1_frame_id_;
     }
 
-    if (sensor2_is_cam_)
+    if (sensor2_centroids->sensor_type != sensor1_centroids->LIDAR)
     {
         camera_to_lidar(sensor2_cloud, aux);
         sensor2_cloud.swap(aux);
+        sensor2_real_frame_id = "rotated_" + sensor2_frame_id_;
+    }
+    else
+    {
+        sensor2_real_frame_id = sensor2_frame_id_;
     }
 
     std::vector<pcl::PointXYZ> *sensor1_vector(new std::vector<pcl::PointXYZ>);
     std::vector<pcl::PointXYZ> *sensor2_vector(new std::vector<pcl::PointXYZ>);
 
-    for (ushort i = 0; i < 4; i++)
-    {
-        RCLCPP_INFO(get_logger(), "[rotated] %ith point of camera: [%f, %f, %f]", i, sensor1_cloud->at(i).x, sensor1_cloud->at(i).y, sensor1_cloud->at(i).z);
-        RCLCPP_INFO(get_logger(), "[rotated] %ith point of lidar: [%f, %f, %f]", i, sensor2_cloud->at(i).x, sensor2_cloud->at(i).y, sensor2_cloud->at(i).z);
-    }
-
     sortPatternCenters(sensor1_cloud, *sensor1_vector);
     sortPatternCenters(sensor2_cloud, *sensor2_vector);
-
-    for (ushort i = 0; i < 4; i++)
-    {
-        RCLCPP_INFO(get_logger(), "[sorted] %ith point of camera: [%f, %f, %f]", i, sensor1_vector->at(i).x, sensor1_vector->at(i).y, sensor1_vector->at(i).z);
-        RCLCPP_INFO(get_logger(), "[sorted] %ith point of lidar: [%f, %f, %f]", i, sensor2_vector->at(i).x, sensor2_vector->at(i).y, sensor2_vector->at(i).z);
-    }
 
     if (DEBUG)
     {
         sensor_msgs::msg::PointCloud2 colour_cloud;
 
         colourCenters(*sensor1_vector, isensor1_cloud);
-
-        for (ushort i = 0; i < 4; i++)
-        {
-            RCLCPP_INFO(get_logger(), "[sorted] %ith point of camera: [%f, %f, %f]", i, isensor1_cloud->at(i).x, isensor1_cloud->at(i).y, isensor1_cloud->at(i).z);
-        }
-        // colourCenters(sensor1_cloud, isensor1_cloud);
         pcl::toROSMsg(*isensor1_cloud, colour_cloud);
-        colour_cloud.header.frame_id =
-            sensor1_is_cam_ ? "rotated_" + sensor1_frame_id_ : sensor1_frame_id_;
+        colour_cloud.header.frame_id = sensor1_real_frame_id;
         colour_sensor1_pub_->publish(colour_cloud);
 
         colourCenters(*sensor2_vector, isensor2_cloud);
-        for (ushort j = 0; j < 4; j++)
-        {
-            RCLCPP_INFO(get_logger(), "[sorted] %ith point of lidar: [%f, %f, %f]", j, isensor2_cloud->at(j).x, isensor2_cloud->at(j).y, isensor2_cloud->at(j).z);
-        }
-        // colourCenters(sensor2_cloud, isensor2_cloud);
         pcl::toROSMsg(*isensor2_cloud, colour_cloud);
-        colour_cloud.header.frame_id =
-            sensor2_is_cam_ ? "rotated_" + sensor2_frame_id_ : sensor2_frame_id_;
+        colour_cloud.header.frame_id = sensor2_real_frame_id;
         colour_sensor2_pub_->publish(colour_cloud);
     }
 
-    tf2::Transform tf_sensor1_sensor2 = calibrateExtrinsics(*sensor1_vector, *sensor2_vector);
+    Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(*sensor1_vector, *sensor2_vector);
 
-    double roll, pitch, yaw;
-    tf2::impl::getEulerYPR(tf_sensor1_sensor2.getRotation(), yaw, pitch, roll);
+    if (publish_tf_)
+    {
+        geometry_msgs::msg::TransformStamped transform;
 
-    RCLCPP_INFO(get_logger(), "The transformation of sensor 1 in sensor 2 is: [%f, %f, %f, %f, %f, %f]",
-                tf_sensor1_sensor2.getOrigin().getX(),
-                tf_sensor1_sensor2.getOrigin().getY(),
-                tf_sensor1_sensor2.getOrigin().getZ(),
-                roll, pitch, yaw);
+        // Broadcast transform
+        transform = tf2::eigenToTransform((Eigen::Affine3d)tf_sensor1_sensor2);
+        transform.header.stamp = get_clock()->now();
+        RCLCPP_INFO(get_logger(), "Broadcasting transformation from %s to %s", sensor2_real_frame_id.c_str(), sensor1_real_frame_id.c_str());
+
+        transform.header.frame_id = sensor2_real_frame_id.c_str();
+        transform.child_frame_id = sensor1_real_frame_id.c_str();
+
+        static auto tf_broadcaster = tf2_ros::StaticTransformBroadcaster(this);
+        tf_broadcaster.sendTransform(transform);
+    }
 }
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    auto nh = std::make_shared<Registration>();
+    auto nh = std::make_shared<Calibration>();
 
     rclcpp::spin(nh);
     return 0;

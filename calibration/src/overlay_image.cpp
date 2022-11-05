@@ -23,18 +23,31 @@ OverlayImage::OverlayImage(const rclcpp::NodeOptions &options = rclcpp::NodeOpti
 
     initializeParams();
 
-    RCLCPP_INFO(get_logger(), "Relative pose of sensor 1 in sensor 2: [%f, %f, %f, %f, %f, %f]", pose_[0], pose_[1], pose_[2],
-                pose_[3], pose_[4], pose_[5]);
+    Eigen::Vector3f translation = {pose_[0], pose_[1], pose_[2]};
 
-    tf2::Vector3 translation(pose_[0], pose_[1], pose_[1]);
+    Eigen::Vector3f rotation = {pose_[3], pose_[4], pose_[5]};
 
-    transform_.setOrigin(translation);
+    float roll = 0.0, pitch = 0.0, yaw = 0.0;
 
-    tf2::Quaternion quaternion;
+    roll = M_PI_2;
+    pitch = 0.0;
+    yaw = M_PI_2;
 
-    quaternion.setRPY(pose_[3], pose_[4], pose_[5]);
+    Eigen::Quaternionf quaternion;
 
-    transform_.setRotation(quaternion);
+    quaternion = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
+                 Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+                 Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
+
+    Eigen::Matrix3f matrix = quaternion.matrix();
+
+    translation_ = matrix * translation;
+
+    rotation = matrix * rotation;
+
+    quaternion_ = Eigen::AngleAxisf(rotation.x(), Eigen::Vector3f::UnitX()) *
+                  Eigen::AngleAxisf(rotation.y(), Eigen::Vector3f::UnitY()) *
+                  Eigen::AngleAxisf(rotation.z(), Eigen::Vector3f::UnitZ());
 
     img_pub_ = image_transport::create_publisher(this, "overlay", imageQoS().get_rmw_qos_profile());
 
@@ -58,7 +71,7 @@ void OverlayImage::initializeParams()
 
     desc.name = "pose";
     desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE_ARRAY;
-    desc.description = "transformation of sensor 1 in sensor 2";
+    desc.description = "transformation of cloud sensor in image sensor";
     pose_ = declare_parameter(desc.name, pose_);
 }
 
@@ -108,25 +121,16 @@ void OverlayImage::callback(const sensor_msgs::msg::Image::ConstSharedPtr image_
 
     lidar_to_camera(cloud_pcl, cloud_xy);
 
-    // cloud_pcl.reset(new pcl::PointCloud<pcl::PointXYZ>());
+    cloud_pcl.reset(new pcl::PointCloud<pcl::PointXYZ>());
 
-    // pcl_ros::transformPointCloud(*cloud_xy, *cloud_pcl, transform_);
+    pcl::transformPointCloud(*cloud_xy, *cloud_pcl, translation_, quaternion_);
 
-    // for (int i = 0; i < cloud_pcl->size(); ++i)
-    // {
-    //     cv::Point3f point;
-    //     point.x = cloud_pcl->points[i].x;
-    //     point.y = cloud_pcl->points[i].y;
-    //     point.z = cloud_pcl->points[i].z;
-    //     cloud_cv->push_back(point);
-    // }
-
-    for (int i = 0; i < cloud_xy->size(); ++i)
+    for (int i = 0; i < cloud_pcl->size(); ++i)
     {
         cv::Point3f point;
-        point.x = cloud_xy->points[i].x;
-        point.y = cloud_xy->points[i].y;
-        point.z = cloud_xy->points[i].z;
+        point.x = cloud_pcl->points[i].x;
+        point.y = cloud_pcl->points[i].y;
+        point.z = cloud_pcl->points[i].z;
         cloud_cv->push_back(point);
     }
 
@@ -137,6 +141,47 @@ void OverlayImage::callback(const sensor_msgs::msg::Image::ConstSharedPtr image_
         cv_bridge::CvImage(image_msg->header, image_msg->encoding, *imageCopy).toImageMsg();
     out_img->header.frame_id = image_msg->header.frame_id;
     img_pub_.publish(out_img);
+}
+
+cv::Scalar OverlayImage::getColor(double normalize_depth)
+{
+    uint r, g, b;
+
+    double inv = (1 - normalize_depth) / 0.25;
+    uint c = (int)inv;
+    uint value = (int)255 * (inv - c);
+
+    switch (c)
+    {
+    case 0:
+        r = 255;
+        g = value;
+        b = 0;
+        break;
+    case 1:
+        r = 255 - value;
+        g = 255;
+        b = 0;
+        break;
+    case 2:
+        r = 0;
+        g = 255;
+        b = value;
+        break;
+    case 3:
+        r = 0;
+        g = 255 - value;
+        b = 255;
+        break;
+
+    default:
+        r = 0;
+        g = 0;
+        b = 255;
+        break;
+    }
+
+    return cv::Scalar(r, g, b);
 }
 
 void OverlayImage::drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv::Mat k, cv::Mat d)
@@ -156,7 +201,7 @@ void OverlayImage::drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv:
             double distance = std::sqrt(std::pow(pts[i].x, 2) + std::pow(pts[i].y, 2) + std::pow(pts[i].z, 2));
             double normal = normalizeRange(distance);
 
-            cv::circle(image, points[i], 10, cv::Scalar(255, 0, 0), -1);
+            cv::circle(image, points[i], 10, getColor(normal), -1);
         }
         else
         {

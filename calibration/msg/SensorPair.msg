@@ -26,4 +26,4 @@ float64[3]  t
 
 # The euler angles of the transformation of sensor 1 in sensor 2
 # the 3 parameters are: (roll, pitch yaw).
-float64[3]  r-
+float64[3]  r

@@ -2,6 +2,8 @@
   overlay_image: Display the image from the camera superimpose with the point clouds
 */
 
+#include <cmath>
+
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "message_filters/subscriber.h"
@@ -19,6 +21,8 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "image_transport/image_transport.hpp"
 #include "opencv2/opencv.hpp"
+#include "eigen3/Eigen/Core"
+#include "eigen3/Eigen/Geometry"
 
 class OverlayImage : public rclcpp::Node
 {
@@ -44,6 +48,7 @@ public:
 private:
     void initializeParams();
     void callback(const sensor_msgs::msg::Image::ConstSharedPtr image, const sensor_msgs::msg::CameraInfo::ConstSharedPtr camera, sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud);
+    cv::Scalar getColor(double value);
     void drawPoints(cv::Mat &image, std::vector<cv::Point3f> &pts, cv::Mat k, cv::Mat d);
 
     // Pubs Definition
@@ -66,11 +71,8 @@ private:
     cv::Mat cameraMatrix_;
     cv::Mat distCoeffs_;
 
-    tf2::Transform transform_;
+    Eigen::Vector3f translation_;
+    Eigen::Quaternionf quaternion_;
 
     std::vector<double> pose_;
-
-    std::vector<double> rotation_{3};
-
-    std::vector<double> translation_{3};
 };
