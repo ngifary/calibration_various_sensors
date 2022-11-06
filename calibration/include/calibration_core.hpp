@@ -48,7 +48,8 @@ public:
 private:
     void initializeParams();
     void callback(const calibration::msg::CircleCentroids::ConstSharedPtr sensor1_centroids, const calibration::msg::CircleCentroids::ConstSharedPtr sensor2_centroids);
-    Eigen::Affine3f calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl);
+    Eigen::Affine3f targetPose(pcl::PointCloud<pcl::PointXYZ>::Ptr sensor_pcl);
+    Eigen::Affine3f calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_pcl, pcl::PointCloud<pcl::PointXYZ>::Ptr sensor2_pcl);
 
     // Pubs Declaration
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colour_sensor2_pub_, colour_sensor1_pub_;

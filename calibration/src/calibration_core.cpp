@@ -157,27 +157,23 @@ void Calibration::initializeParams()
     csv_name_ = declare_parameter(desc.name, "registration_" + currentDateTime() + ".csv");
 }
 
-Eigen::Affine3f Calibration::calibrateExtrinsics(std::vector<pcl::PointXYZ> &sensor1_pcl, std::vector<pcl::PointXYZ> &sensor2_pcl)
+Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_pcl, pcl::PointCloud<pcl::PointXYZ>::Ptr sensor2_pcl)
 {
+    // Get the board centroids
+    Eigen::Vector3f board1_centroids(0.0, 0.0, 0.0);
+    Eigen::Vector3f board2_centroids(0.0, 0.0, 0.0);
     std::vector<Eigen::Vector3f> sensor1_pts, sensor2_pts;
     for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
     {
         Eigen::Vector3f point;
 
-        point = sensor1_pcl[i].getVector3fMap();
+        point = sensor1_pcl->at(i).getVector3fMap();
+        board1_centroids += point;
         sensor1_pts.push_back(point);
 
-        point = sensor2_pcl[i].getVector3fMap();
+        point = sensor2_pcl->at(i).getVector3fMap();
+        board2_centroids += point;
         sensor2_pts.push_back(point);
-    }
-
-    // Get the board centroids
-    Eigen::Vector3f board1_centroids(0.0, 0.0, 0.0);
-    Eigen::Vector3f board2_centroids(0.0, 0.0, 0.0);
-    for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
-    {
-        board1_centroids += sensor1_pts.at(i);
-        board2_centroids += sensor2_pts.at(i);
     }
     board1_centroids /= TARGET_NUM_CIRCLES;
     board2_centroids /= TARGET_NUM_CIRCLES;
@@ -276,28 +272,27 @@ void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedP
         sensor2_real_frame_id = sensor2_frame_id_;
     }
 
-    std::vector<pcl::PointXYZ> *sensor1_vector(new std::vector<pcl::PointXYZ>);
-    std::vector<pcl::PointXYZ> *sensor2_vector(new std::vector<pcl::PointXYZ>);
-
-    sortPatternCenters(sensor1_cloud, *sensor1_vector);
-    sortPatternCenters(sensor2_cloud, *sensor2_vector);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud_sorted(new pcl::PointCloud<pcl::PointXYZ>),
+        sensor2_cloud_sorted(new pcl::PointCloud<pcl::PointXYZ>);
+    *sensor1_cloud_sorted = sortPatternCenters(sensor1_cloud);
+    *sensor2_cloud_sorted = sortPatternCenters(sensor2_cloud);
 
     if (DEBUG)
     {
         sensor_msgs::msg::PointCloud2 colour_cloud;
 
-        colourCenters(*sensor1_vector, isensor1_cloud);
+        colourCenters(sensor1_cloud_sorted, isensor1_cloud);
         pcl::toROSMsg(*isensor1_cloud, colour_cloud);
         colour_cloud.header.frame_id = sensor1_real_frame_id;
         colour_sensor1_pub_->publish(colour_cloud);
 
-        colourCenters(*sensor2_vector, isensor2_cloud);
+        colourCenters(sensor2_cloud_sorted, isensor2_cloud);
         pcl::toROSMsg(*isensor2_cloud, colour_cloud);
         colour_cloud.header.frame_id = sensor2_real_frame_id;
         colour_sensor2_pub_->publish(colour_cloud);
     }
 
-    Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(*sensor1_vector, *sensor2_vector);
+    Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(sensor1_cloud_sorted, sensor2_cloud_sorted);
 
     if (publish_tf_)
     {

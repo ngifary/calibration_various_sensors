@@ -19,10 +19,9 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
     pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
     rotated_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
     centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
+    coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
   }
   final_pub_ = this->create_publisher<calibration::msg::CircleCentroids>("centers_msg", 1);
-
-  coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
 
   std::string csv_name;
 
@@ -463,11 +462,14 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   xy_cloud.reset(); // Free memory
   cloud_f.reset();  // Free memory
 
-  // Publishing "plane_model"
-  pcl_msgs::msg::ModelCoefficients m_coeff;
-  pcl_conversions::moveFromPCL(*coefficients, m_coeff);
-  m_coeff.header = laser_cloud->header;
-  coeff_pub_->publish(m_coeff);
+  if (DEBUG)
+  {
+    // Publishing "plane_model"
+    pcl_msgs::msg::ModelCoefficients m_coeff;
+    pcl_conversions::moveFromPCL(*coefficients, m_coeff);
+    m_coeff.header = laser_cloud->header;
+    coeff_pub_->publish(m_coeff);
+  }
 
   if (rotated_back_cloud->points.size() == TARGET_NUM_CIRCLES)
   {

@@ -11,6 +11,7 @@
 #include "pcl_ros/transforms.hpp"
 #include "pcl/search/kdtree.h"
 #include "pcl/segmentation/extract_clusters.h"
+#include "pcl/common/distances.h"
 #include "tf2/transform_datatypes.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/impl/utils.h"
@@ -68,8 +69,8 @@ namespace LaserScanner
   {
     PointSphere psphere;
     psphere.radius = magnitude(pcart);
-    psphere.theta = std::atan2(std::sqrt(pcart.x * pcart.x + pcart.y * pcart.y), pcart.z);
-    psphere.phi = std::atan2(pcart.y, pcart.x);
+    psphere.theta = std::atan2(std::sqrt(pcart.x * pcart.x + pcart.y * pcart.y), pcart.z); // -pi/2 <= theta <= pi/2
+    psphere.phi = std::atan2(pcart.y, pcart.x);                                            // -pi <= phi <= pi
     return psphere;
   }
 
@@ -144,33 +145,21 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(LaserScanner::Point,
  */
 void camera_to_lidar(pcl::PointCloud<pcl::PointXYZ>::Ptr camera, pcl::PointCloud<pcl::PointXYZ>::Ptr lidar)
 {
-  tf2::Transform transform;
-  tf2::Quaternion quaternion;
-  tf2Scalar roll, pitch, yaw;
+  Eigen::Vector3f translation(0.0, 0.0, 0.0);
+
+  float roll = 0.0, pitch = 0.0, yaw = 0.0;
+
+  Eigen::Quaternionf quaternion;
+
   roll = -M_PI_2;
-  pitch = 0.0;
-  yaw = -M_PI_2;
-  quaternion.setRPY(roll, pitch, yaw);
+  pitch = M_PI_2;
+  yaw = 0.0;
 
-  transform.setRotation(quaternion);
+  quaternion = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
+               Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+               Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
 
-  pcl_ros::transformPointCloud(*camera, *lidar, transform);
-
-  // Eigen::Vector3f translation(0.0, 0.0, 0.0);
-
-  // float roll = 0.0, pitch = 0.0, yaw = 0.0;
-
-  // Eigen::Quaternionf quaternion;
-
-  // roll = M_PI_2;
-  // pitch = 0.0;
-  // yaw = M_PI_2;
-
-  // quaternion = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()) *
-  //              Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
-  //              Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
-
-  // pcl::transformPointCloud(*lidar, *camera, translation, quaternion);
+  pcl::transformPointCloud(*camera, *lidar, translation, quaternion);
 }
 
 /**
@@ -198,115 +187,96 @@ void lidar_to_camera(pcl::PointCloud<pcl::PointXYZ>::Ptr lidar, pcl::PointCloud<
   pcl::transformPointCloud(*lidar, *camera, translation, quaternion);
 }
 
-void sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
-                        std::vector<pcl::PointXYZ> &pts_vec)
+pcl::PointCloud<pcl::PointXYZ> sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc)
 {
   // 0 -- 1
   // |    |
   // 3 -- 2
 
-  if (pts_vec.empty())
-  {
-    pts_vec.resize(4);
-  }
+  pcl::PointCloud<pcl::PointXYZ> pc_out;
+  pc_out.resize(pc->size());
 
   // Transform points to polar coordinates
   ushort top_pt = 0;
-  std::vector<LaserScanner::PointSphere> sphere_centers{4};
+  std::vector<LaserScanner::PointSphere> sphere_centers(4);
   for (ushort i = 0; i < (ushort)pc->size(); i++)
   {
+    // centroid.get(pc->at(i));
     LaserScanner::PointSphere sphere_center = LaserScanner::toSpherical(pc->at(i));
     sphere_centers[i] = sphere_center;
 
-    if (sphere_center.theta < sphere_centers[top_pt].theta)
+    if (sphere_centers.at(i).theta > sphere_centers.at(top_pt).theta)
     {
       top_pt = i;
     }
   }
 
-  // Compute distances from top-most center to rest of points
-  std::vector<double> distances;
-  for (ushort j = 0; j < (ushort)pc->size(); j++)
+  ushort farthest = 3 - top_pt; // anything but the top_pt
+  ushort closest = farthest;
+
+  for (ushort i = 0; i < (ushort)pc->size(); i++)
   {
-    pcl::PointXYZ pt = pc->points[j];
-    pcl::PointXYZ upper_pt = pc->points[top_pt];
-    distances.push_back(sqrt(pow(pt.x - upper_pt.x, 2) +
-                             pow(pt.y - upper_pt.y, 2) +
-                             pow(pt.z - upper_pt.z, 2)));
-  }
-
-  // Get indices of closest and furthest points
-  int min_dist = (top_pt + 1) % 4, max_dist = top_pt;
-  for (ushort k = 0; k < (ushort)pc->size(); k++)
-  {
-    if (k == top_pt)
-      continue;
-    if (distances[k] > distances[max_dist])
+    if (i != top_pt)
     {
-      max_dist = k;
-    }
-    if (distances[k] < distances[min_dist])
-    {
-      min_dist = k;
+      if (pcl::squaredEuclideanDistance(pc->at(i), pc->at(top_pt)) >
+          pcl::squaredEuclideanDistance(pc->at(farthest), pc->at(top_pt)))
+      {
+        if (pcl::squaredEuclideanDistance(pc->at(farthest), pc->at(top_pt)) <
+            pcl::squaredEuclideanDistance(pc->at(closest), pc->at(top_pt)))
+        {
+          closest = farthest;
+        }
+        farthest = i;
+      }
+      else
+      {
+        if (pcl::squaredEuclideanDistance(pc->at(i), pc->at(top_pt)) <
+            pcl::squaredEuclideanDistance(pc->at(closest), pc->at(top_pt)))
+        {
+          closest = i;
+        }
+      }
     }
   }
+  ushort top_pt2 = 6 - (top_pt + farthest + closest); // 0 + 1 + 2 + 3 = 6
+  // diagonally opposing pairs are top_pt-farthest and top_pt2-closest
 
-  // Second highest point shoud be the one whose distance is the median value
-  int top_pt2 = 6 - (top_pt + max_dist + min_dist); // 0 + 1 + 2 + 3 = 6
-
-  // Order upper row centers
-  int lefttop_pt = top_pt;
-  int righttop_pt = top_pt2;
+  ushort lefttop_pt, righttop_pt, leftbottom_pt, rightbottom_pt;
 
   if (sphere_centers[top_pt].phi < sphere_centers[top_pt2].phi)
   {
-    int aux = lefttop_pt;
-    lefttop_pt = righttop_pt;
-    righttop_pt = aux;
+    lefttop_pt = top_pt;
+    righttop_pt = top_pt2;
+    leftbottom_pt = closest;
+    rightbottom_pt = farthest;
+  }
+  else
+  {
+    lefttop_pt = top_pt2;
+    righttop_pt = top_pt;
+    leftbottom_pt = farthest;
+    rightbottom_pt = closest;
   }
 
   // Swap indices if target is located in the pi,-pi discontinuity
   double angle_diff = sphere_centers[lefttop_pt].phi - sphere_centers[righttop_pt].phi;
   if (angle_diff > M_PI - sphere_centers[lefttop_pt].phi)
   {
-    int aux = lefttop_pt;
+    ushort aux = lefttop_pt;
     lefttop_pt = righttop_pt;
     righttop_pt = aux;
-  }
 
-  // Define bottom row centers using lefttop == top_pt as hypothesis
-  int leftbottom_pt = min_dist;
-  int rightbottom_pt = max_dist;
-
-  // If lefttop != top_pt, swap indices
-  if (righttop_pt == top_pt)
-  {
-    leftbottom_pt = max_dist;
-    rightbottom_pt = min_dist;
+    aux = leftbottom_pt;
+    leftbottom_pt = rightbottom_pt;
+    rightbottom_pt = aux;
   }
 
   // Fill vector with sorted centers
-  pts_vec[0] = pc->points[lefttop_pt];     // lt
-  pts_vec[1] = pc->points[righttop_pt];    // rt
-  pts_vec[2] = pc->points[rightbottom_pt]; // rb
-  pts_vec[3] = pc->points[leftbottom_pt];  // lb
-}
-
-void colourCenters(std::vector<pcl::PointXYZ> &pc,
-                   pcl::PointCloud<pcl::PointXYZI>::Ptr coloured)
-{
-  float intensity = 0;
-  for (int i = 0; i < 4; i++)
-  {
-    pcl::PointXYZI cc;
-    cc.x = pc[i].x;
-    cc.y = pc[i].y;
-    cc.z = pc[i].z;
-
-    cc.intensity = intensity;
-    coloured->push_back(cc);
-    intensity += 0.3;
-  }
+  pc_out[0] = pc->points[lefttop_pt];     // lt
+  pc_out[1] = pc->points[righttop_pt];    // rt
+  pc_out[2] = pc->points[rightbottom_pt]; // rb
+  pc_out[3] = pc->points[leftbottom_pt];  // lb
+  return pc_out;
 }
 
 void colourCenters(pcl::PointCloud<pcl::PointXYZ>::Ptr pc,
@@ -454,8 +424,10 @@ public:
       }
     }
     // Check perimeter?
-    std::vector<pcl::PointXYZ> sorted_centers;
-    sortPatternCenters(candidates_cloud, sorted_centers);
+    pcl::PointCloud<pcl::PointXYZ> sorted_centers;
+    sorted_centers = sortPatternCenters(candidates_cloud);
+    // std::vector<pcl::PointXYZ> sorted_centers;
+    // sortPatternCenters(candidates_cloud, sorted_centers);
     float perimeter = 0;
     for (unsigned i = 0; i < sorted_centers.size(); ++i)
     {
