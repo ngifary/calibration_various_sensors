@@ -15,6 +15,7 @@
 #include "laser2cam_utils.h"
 #include "opencv2/opencv.hpp"
 #include "calibration/msg/circle_centroids.hpp"
+#include "calibration/msg/sensor_pair.hpp"
 
 #include <chrono>
 #include <cinttypes>
@@ -53,6 +54,7 @@ private:
 
     // Pubs Declaration
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr colour_sensor2_pub_, colour_sensor1_pub_;
+    rclcpp::Publisher<calibration::msg::SensorPair>::SharedPtr calibration_pub_;
 
     // Subs Declaration
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;

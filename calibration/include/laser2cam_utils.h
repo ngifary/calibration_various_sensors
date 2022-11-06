@@ -201,11 +201,10 @@ pcl::PointCloud<pcl::PointXYZ> sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>
   std::vector<LaserScanner::PointSphere> sphere_centers(4);
   for (ushort i = 0; i < (ushort)pc->size(); i++)
   {
-    // centroid.get(pc->at(i));
     LaserScanner::PointSphere sphere_center = LaserScanner::toSpherical(pc->at(i));
     sphere_centers[i] = sphere_center;
 
-    if (sphere_centers.at(i).theta > sphere_centers.at(top_pt).theta)
+    if (sphere_centers.at(i).theta < sphere_centers.at(top_pt).theta)
     {
       top_pt = i;
     }
@@ -243,7 +242,7 @@ pcl::PointCloud<pcl::PointXYZ> sortPatternCenters(pcl::PointCloud<pcl::PointXYZ>
 
   ushort lefttop_pt, righttop_pt, leftbottom_pt, rightbottom_pt;
 
-  if (sphere_centers[top_pt].phi < sphere_centers[top_pt2].phi)
+  if (sphere_centers[top_pt].phi > sphere_centers[top_pt2].phi)
   {
     lefttop_pt = top_pt;
     righttop_pt = top_pt2;

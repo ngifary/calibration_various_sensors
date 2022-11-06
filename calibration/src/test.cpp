@@ -42,65 +42,49 @@ int main(int argc, char **argv)
     // Translation from from board to sensor frame
     Eigen::Vector3f sensor1_translation(0.0, 0.0, 0.0);
     Eigen::Vector3f sensor2_translation(0.0, 0.0, 0.0);
-    Eigen::Vector3f sensor_translation(0.0, 0.0, 0.0);
     for (ushort i = 0; i < 4; i++)
     {
         sensor1_translation += sensor1_pts.at(i);
         sensor2_translation += sensor2_pts.at(i);
-        sensor_translation += sensor2_pts[i] - sensor1_pts[i];
     }
     sensor1_translation /= 4;
     sensor2_translation /= 4;
-    sensor_translation /= 4;
+
+    Eigen::Vector3f z_axis(0.0, 0.0, 1.0);
 
     Eigen::Vector3f sensor_rotation(0.0, 0.0, 0.0);
+
+    Eigen::Vector3f vector1_point = (sensor1_pts[0] + sensor1_pts[1])/2 - sensor1_translation;
+    Eigen::Quaternionf quaternion1;
+    quaternion1.setFromTwoVectors(z_axis, vector1_point);
+    auto board1_rotation = quaternion1.toRotationMatrix().eulerAngles(0, 1, 2);
+    Eigen::Vector3f vector2_point = (sensor2_pts[0] + sensor2_pts[1])/2- sensor2_translation;
+    Eigen::Quaternionf quaternion2;
+    quaternion2.setFromTwoVectors(z_axis, vector2_point);
+    auto board2_rotation = quaternion2.toRotationMatrix().eulerAngles(0, 1, 2);
+
+    sensor1_translation = Eigen::Vector3f(0.0, 0.0, 0.0);
+    sensor2_translation = Eigen::Vector3f(0.0, 0.0, 0.0);
     for (ushort j = 0; j < 4; j++)
     {
-        Eigen::Vector3f vector1_point = sensor1_pts[j] - sensor1_translation;
-        Eigen::Vector3f vector2_point = sensor2_pts[j] - sensor2_translation;
-
-        Eigen::Quaternionf quaternion;
-        quaternion.setFromTwoVectors(vector1_point, vector2_point);
-
-        sensor_rotation += quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
-        // std::cout << "Rotation of sensor 1 is roll: " << euler.x() << "pitch: " << euler.y() << "yaw: " << euler.z() << std::endl;
+        sensor1_pts[j] = quaternion1 * sensor1_pts[j];
+        sensor1_translation += sensor1_pts[j];
+        sensor2_pts[j] = quaternion2 * sensor2_pts[j];
+        sensor2_translation += sensor2_pts[j];
     }
-    sensor_rotation /= 4;
+    sensor1_translation /= 4;
+    sensor2_translation /= 4;
 
-    Eigen::VectorXf pose(6, 1);
-    pose.block<3, 1>(0, 0) = sensor_translation;
-    // pose.block<3, 1>(3, 0) = sensor_rotation;
-
-    Eigen::Quaternionf quaternion;
-
-    quaternion = Eigen::AngleAxisf(sensor_rotation[0], Eigen::Vector3f::UnitX()) *
-                 Eigen::AngleAxisf(sensor_rotation[1], Eigen::Vector3f::UnitY()) *
-                 Eigen::AngleAxisf(sensor_rotation[2], Eigen::Vector3f::UnitZ());
-
-    pose.block<3, 1>(3, 0) = quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
-
-    std::cout << "Relative pose of sensors: " << std::endl;
-    std::cout << pose << std::endl;
-
-    Eigen::Matrix4f mat;
-    mat.setIdentity();
-    mat.block<3, 3>(0, 0) = quaternion.toRotationMatrix();
-    mat.block<3, 1>(0, 3) = sensor_translation;
-
-    Eigen::Affine3f transformation(mat);
-
-    Eigen::Affine3f inv_transformation = transformation.inverse();
-
-    auto inv_translation = inv_transformation.translation();
-
-    auto inv_rotation = inv_transformation.rotation().eulerAngles(0, 1, 2);
-
-    Eigen::VectorXf inv_pose(6, 1);
-    inv_pose.block<3, 1>(0, 0) = inv_translation;
-    inv_pose.block<3, 1>(3, 0) = inv_rotation;
-
-    std::cout << "Inverse relative pose of sensors: " << std::endl;
-    std::cout << inv_pose << std::endl;
+    std::cout << "New points of 1 : " << std::endl;
+    for (ushort k = 0; k < 4; k++)
+    {
+        std::cout << "point" << k << ": " << sensor1_pts[k] - sensor1_translation << std::endl;
+    }
+    std::cout << "New points of 2 : " << std::endl;
+    for (ushort l = 0; l < 4; l++)
+    {
+        std::cout << "point" << l << ": " << sensor2_pts[l] - sensor2_translation << std::endl;
+    }
 
     return 0;
 }

@@ -20,10 +20,8 @@ sensor_msgs/CameraInfo camera2  # CameraInfo from sensor 2 (monocamera, stereoca
 sensor_msgs/PointCloud2 cloud1  # PointCloud2 reading from sensor 1 (lidar, stereocamera)
 sensor_msgs/PointCloud2 cloud2  # PointCloud2 reading from sensor 2 (lidar, stereocamera)
 
-# The translation of the transformation of sensor 1 in sensor 2
-# the 3 parameters are: (Tx, Ty, Tz).
-float64[3]  t
+float64[12]  tf_sensor1_board
 
-# The euler angles of the transformation of sensor 1 in sensor 2
-# the 3 parameters are: (roll, pitch yaw).
-float64[3]  r
+float64[12]  tf_sensor2_board
+
+float64[12]  tf_sensor1_sensor2

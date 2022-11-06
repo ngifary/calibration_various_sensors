@@ -12,8 +12,12 @@ Calibration::Calibration(const rclcpp::NodeOptions &options = rclcpp::NodeOption
 
     initializeParams();
 
-    colour_sensor1_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("calibration_ready/sensor1", 1);
-    colour_sensor2_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("calibration_ready/sensor2", 1);
+    if (DEBUG)
+    {
+        colour_sensor1_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("calibration_ready/sensor1", 1);
+        colour_sensor2_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("calibration_ready/sensor2", 1);
+    }
+    calibration_pub_ = create_publisher<calibration::msg::SensorPair>("calibration_result", 1);
 
     sensor1_sub_.subscribe(this, "cloud1", cloudQoS().get_rmw_qos_profile());
     sensor2_sub_.subscribe(this, "cloud2", cloudQoS().get_rmw_qos_profile());
@@ -157,6 +161,61 @@ void Calibration::initializeParams()
     csv_name_ = declare_parameter(desc.name, "registration_" + currentDateTime() + ".csv");
 }
 
+Eigen::Affine3f Calibration::targetPose(pcl::PointCloud<pcl::PointXYZ>::Ptr board_pcl)
+{
+    // Translation from from board to sensor frame
+    Eigen::Vector3f board_centroid(0.0, 0.0, 0.0);
+    std::vector<Eigen::Vector3f> board_pts(4);
+    for (ushort i = 0; i < 4; i++)
+    {
+        Eigen::Vector3f point;
+
+        point = board_pcl->at(i).getVector3fMap();
+        board_centroid += point;
+        board_pts[i] = point;
+    }
+    board_centroid /= 4;
+
+    // Construct board normal to -x axis
+
+    auto height_2 = ((board_pts[0] + board_pts[1]) / 2 - board_centroid).norm();
+    auto width_2 = ((board_pts[1] + board_pts[2]) / 2 - board_centroid).norm();
+
+    std::vector<Eigen::Vector3f> normal_board_pts(4);
+    normal_board_pts[0] = Eigen::Vector3f(0.0, width_2, height_2);
+    normal_board_pts[1] = Eigen::Vector3f(0.0, -width_2, height_2);
+    normal_board_pts[2] = Eigen::Vector3f(0.0, -width_2, -height_2);
+    normal_board_pts[3] = Eigen::Vector3f(0.0, width_2, -height_2);
+
+    Eigen::Vector4f board_rotation(0.0, 0.0, 0.0, 0.0);
+    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
+    {
+        Eigen::Vector3f vector_point = board_pts[j] - board_centroid;
+
+        Eigen::Quaternionf quaternion;
+        quaternion.setFromTwoVectors(normal_board_pts[j], vector_point);
+        if (quaternion.w() > 0)
+        {
+            quaternion = quaternion.conjugate();
+        }
+        board_rotation += quaternion.coeffs();
+    }
+    board_rotation /= TARGET_NUM_CIRCLES;
+
+    Eigen::Quaternionf quaternion(board_rotation);
+
+    Eigen::Vector3f board_translation = -(quaternion * board_centroid);
+
+    Eigen::Matrix4f mat;
+    mat.setIdentity();
+    mat.block<3, 3>(0, 0) = quaternion.toRotationMatrix();
+    mat.block<3, 1>(0, 3) = board_translation;
+
+    Eigen::Affine3f tf_sensor_board(mat);
+
+    return tf_sensor_board;
+}
+
 Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_pcl, pcl::PointCloud<pcl::PointXYZ>::Ptr sensor2_pcl)
 {
     // Get the board centroids
@@ -179,7 +238,7 @@ Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>:
     board2_centroids /= TARGET_NUM_CIRCLES;
 
     // Relative rotation of sensor 1 in sensor 2 using SVD
-    Eigen::Vector3f sensor_rotation(0.0, 0.0, 0.0);
+    Eigen::Vector4f sensor_rotation(0.0, 0.0, 0.0, 0.0);
     for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
     {
         Eigen::Vector3f vector1_point = sensor1_pts[j] - board1_centroids;
@@ -187,24 +246,19 @@ Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>:
 
         Eigen::Quaternionf quaternion;
         quaternion.setFromTwoVectors(vector1_point, vector2_point);
+        if (quaternion.w() > 0)
+        {
+            quaternion = quaternion.conjugate();
+        }
 
-        sensor_rotation += quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
+        sensor_rotation += quaternion.coeffs();
     }
     sensor_rotation /= TARGET_NUM_CIRCLES;
 
-    Eigen::Quaternionf quaternion;
-
-    quaternion = Eigen::AngleAxisf(sensor_rotation[0], Eigen::Vector3f::UnitX()) *
-                 Eigen::AngleAxisf(sensor_rotation[1], Eigen::Vector3f::UnitY()) *
-                 Eigen::AngleAxisf(sensor_rotation[2], Eigen::Vector3f::UnitZ());
+    Eigen::Quaternionf quaternion(sensor_rotation);
 
     // Relative translation of sensor 1 in sensor 2
-    Eigen::Vector3f sensor_translation(0.0, 0.0, 0.0);
-    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
-    {
-        sensor_translation += board2_centroids - (quaternion * board1_centroids);
-    }
-    sensor_translation /= TARGET_NUM_CIRCLES;
+    Eigen::Vector3f sensor_translation = board2_centroids - (quaternion * board1_centroids);
 
     Eigen::Matrix4f mat;
     mat.setIdentity();
@@ -217,7 +271,7 @@ Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>:
     {
         Eigen::VectorXf pose(6, 1);
         pose.block<3, 1>(0, 0) = sensor_translation;
-        pose.block<3, 1>(3, 0) = sensor_rotation;
+        pose.block<3, 1>(3, 0) = quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
 
         RCLCPP_INFO(get_logger(), "The transformation of sensor 1 to sensor 2 is: [%f, %f, %f, %f, %f, %f]", pose[0], pose[1], pose[2], pose[3], pose[4], pose[5]);
 
@@ -292,6 +346,9 @@ void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedP
         colour_sensor2_pub_->publish(colour_cloud);
     }
 
+    Eigen::Affine3f tf_sensor1_board = targetPose(sensor1_cloud_sorted);
+    Eigen::Affine3f tf_sensor2_board = targetPose(sensor2_cloud_sorted);
+
     Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(sensor1_cloud_sorted, sensor2_cloud_sorted);
 
     if (publish_tf_)
@@ -309,6 +366,29 @@ void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedP
         static auto tf_broadcaster = tf2_ros::StaticTransformBroadcaster(this);
         tf_broadcaster.sendTransform(transform);
     }
+
+    calibration::msg::SensorPair to_send;
+    to_send.header.stamp = get_clock()->now();
+    to_send.sensor1_type = sensor1_centroids->sensor_type;
+    to_send.camera1 = sensor1_centroids->camera_info;
+    to_send.image1 = sensor1_centroids->image;
+    to_send.cloud1 = sensor1_centroids->cloud;
+    to_send.sensor2_type = sensor2_centroids->sensor_type;
+    to_send.camera2 = sensor2_centroids->camera_info;
+    to_send.image2 = sensor2_centroids->image;
+    to_send.cloud2 = sensor2_centroids->cloud;
+
+    for (ushort i = 0; i < (int)tf_sensor1_sensor2.rows(); i++)
+    {
+        for (ushort j = 0; j < (int)tf_sensor1_sensor2.cols(); j++)
+        {
+            to_send.tf_sensor1_sensor2[i + j] = tf_sensor1_sensor2(i, j);
+            to_send.tf_sensor1_board[i + j] = tf_sensor1_board(i, j);
+            to_send.tf_sensor2_board[i + j] = tf_sensor2_board(i, j);
+        }
+    }
+
+    calibration_pub_->publish(to_send);
 }
 
 int main(int argc, char **argv)
