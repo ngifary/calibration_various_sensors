@@ -72,6 +72,26 @@ MonoQRPattern::MonoQRPattern() : Node("mono_qr_pattern")
 
   // ROS param callback
   auto ret = this->add_on_set_parameters_callback(std::bind(&MonoQRPattern::param_callback, this, std::placeholders::_1));
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    std::ostringstream os;
+    os << getenv("HOME") << "/calibration_tests/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+      {
+        RCLCPP_INFO(get_logger(), "Opening %s", os.str().c_str());
+        savefile_.open(os.str().c_str());
+        savefile_ << "cent1_x; cent1_y; cent1_z; "
+                     "cent2_x; cent2_y; cent2_z; "
+                     "cent3_x; cent3_y; cent3_z; "
+                     "cent4_x; cent4_y; cent4_z; it"
+                  << std::endl;
+      }
+    }
+  }
 }
 
 MonoQRPattern::~MonoQRPattern()
@@ -93,7 +113,7 @@ void MonoQRPattern::initializeParams()
   desc.description = "distance from left circles centre to right circles centre (m)";
   delta_width_circles_ = declare_parameter(desc.name, 0.5);
 
-  desc.name = "delta_height_circles_";
+  desc.name = "delta_height_circles";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "distance from top circles centre to bottom circles centre (m)";
   delta_height_circles_ = declare_parameter(desc.name, 0.4);
@@ -118,25 +138,10 @@ void MonoQRPattern::initializeParams()
   desc.description = "minimum marker to be detected (-)";
   min_detected_markers_ = declare_parameter(desc.name, 3);
 
-  // desc.name = "cluster_tolerance";
-  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  // desc.description = "maximal distance to still be included in a cluster (m)";
-  // cluster_tolerance_ = declare_parameter(desc.name, 0.05);
-
-  // desc.name = "min_cluster_factor";
-  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
-  // desc.description = "minimum cluster size to frame ratio (-)";
-  // min_cluster_factor_ = declare_parameter(desc.name, 2.0 / 3.0);
-
-  // desc.name = "skip_warmup";
-  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  // desc.description = "skip warmup";
-  // skip_warmup_ = declare_parameter(desc.name, false);
-
-  // desc.name = "save_to_file";
-  // desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
-  // desc.description = "save result to a file";
-  // save_to_file_ = declare_parameter(desc.name, false);
+  desc.name = "save_to_file";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  desc.description = "save result to a file";
+  save_to_file_ = declare_parameter(desc.name, false);
 }
 
 cv::Point2f MonoQRPattern::projectPointDist(cv::Point3f pt_cv, const cv::Mat intrinsics, const cv::Mat distCoeffs)
@@ -512,6 +517,20 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
       to_send.camera_info = *left_info;
       to_send.centers = ros_pointcloud;
       final_pub_->publish(to_send);
+
+      if (save_to_file_)
+      {
+        iter_++;
+        sortPatternCenters(centers_cloud);
+        for (pcl::PointCloud<pcl::PointXYZ>::iterator it = centers_cloud->begin(); it < centers_cloud->end(); ++it)
+        {
+          savefile_ << it->x << "; " << it->y << "; " << it->z << "; ";
+        }
+        savefile_ << iter_;
+        RCLCPP_INFO(get_logger(), "Saving data of the %i-th iteration", iter_);
+      }
+      if (save_to_file_)
+        savefile_ << std::endl;
     }
     else
     {

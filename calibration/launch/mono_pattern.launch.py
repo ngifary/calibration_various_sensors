@@ -39,7 +39,7 @@ def generate_launch_description():
         'sensor_id', default_value='0'
     )
 
-    marker_size = 0.05
+    marker_size = 0.04
 
     mono_qr_pattern_node = Node(
         package='calibration',
@@ -56,8 +56,8 @@ def generate_launch_description():
             'marker_size': marker_size,
             'delta_width_qr_center': 0.155,
             'delta_height_qr_center': 0.080,
-            'delta_width_circles': 0.09,
-            'delta_height_circles': 0.14
+            'delta_width_circles': 0.14,
+            'delta_height_circles': 0.09
         }],
         output=stdout
     )

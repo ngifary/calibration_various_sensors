@@ -17,7 +17,7 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
   if (DEBUG)
   {
     pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("pattern_circles", 1);
-    rotated_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("rotated_pattern", 1);
+    plane_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("plane_pattern", 1);
     centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
     coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
   }
@@ -30,6 +30,26 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
   csv_name = this->declare_parameter("csv_name", "lidar_pattern_" + currentDateTime() + ".csv");
 
   auto ret = this->add_on_set_parameters_callback(std::bind(&LidarPattern::param_callback, this, std::placeholders::_1));
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    std::ostringstream os;
+    os << getenv("HOME") << "/calibration_tests/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+      {
+        RCLCPP_INFO(get_logger(), "Opening %s", os.str().c_str());
+        savefile_.open(os.str().c_str());
+        savefile_ << "cent1_x; cent1_y; cent1_z; "
+                     "cent2_x; cent2_y; cent2_z; "
+                     "cent3_x; cent3_y; cent3_z; "
+                     "cent4_x; cent4_y; cent4_z; it"
+                  << std::endl;
+      }
+    }
+  }
 }
 
 LidarPattern::~LidarPattern()
@@ -107,7 +127,7 @@ void LidarPattern::initializeParams()
   desc.name = "line_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "Line threshold for line segmentation (m)";
-  line_threshold_ = declare_parameter(desc.name, 0.01);
+  line_threshold_ = declare_parameter(desc.name, 0.005);
 
   desc.name = "plane_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -128,6 +148,11 @@ void LidarPattern::initializeParams()
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
   target_radius_tolerance_ = declare_parameter(desc.name, 0.01);
+
+  desc.name = "save_to_file";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  desc.description = "save result to a file";
+  save_to_file_ = declare_parameter(desc.name, false);
 }
 
 void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser_cloud)
@@ -217,14 +242,13 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
       getRotationMatrix(floor_plane_normal_vector, xy_plane_normal_vector);
   pcl::transformPointCloud(*plane_cloud, *xy_cloud, rotation);
 
-  // Publishing "rotated_pattern" cloud (plane transformed to be aligned with
-  // XY)
+  // Publishing "planarized pattern" cloud (cloud plane projected to the detected plane)
   if (DEBUG)
   {
-    sensor_msgs::msg::PointCloud2 ros_rotated_pattern;
-    pcl::toROSMsg(*xy_cloud, ros_rotated_pattern);
-    ros_rotated_pattern.header = laser_cloud->header;
-    rotated_pattern_pub_->publish(ros_rotated_pattern);
+    sensor_msgs::msg::PointCloud2 lasercloud_ros2;
+    pcl::toROSMsg(*plane_cloud, lasercloud_ros2);
+    lasercloud_ros2.header = laser_cloud->header;
+    plane_pub_->publish(lasercloud_ros2);
   }
 
   double zcoord_xyplane = xy_cloud->at(0).z;
@@ -293,13 +317,15 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     return;
   }
 
-  // Publishing "pattern_circles" cloud (points belonging to the detected plane)
   if (DEBUG)
   {
-    sensor_msgs::msg::PointCloud2 lasercloud_ros2;
-    pcl::toROSMsg(*edges_cloud, lasercloud_ros2);
-    lasercloud_ros2.header = laser_cloud->header;
-    pattern_pub_->publish(lasercloud_ros2);
+    // Publishing "edges of the cloud"
+    pcl::PointCloud<pcl::PointXYZ>::Ptr normal_edge_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::transformPointCloud(*edges_cloud, *normal_edge_cloud, rotation.inverse());
+    sensor_msgs::msg::PointCloud2 ros_pattern;
+    pcl::toROSMsg(*normal_edge_cloud, ros_pattern);
+    ros_pattern.header = laser_cloud->header;
+    pattern_pub_->publish(ros_pattern);
   }
 
   // RANSAC circle detection
@@ -319,7 +345,7 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
   if (DEBUG)
     RCLCPP_INFO(this->get_logger(), "[%s] Searching for points in cloud of size %lu",
                 get_name(), edges_cloud->points.size());
-  if (edges_cloud->points.size() > 30)
+  if (edges_cloud->points.size() > 80)
   {
     RCLCPP_INFO(get_logger(), "[%s] Too much points in cloud. Please adjust gap_threshold", get_name());
     return;
@@ -488,6 +514,22 @@ void LidarPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr 
     to_send.cloud = *laser_cloud;
     to_send.centers = ros2_pointcloud;
     final_pub_->publish(to_send);
+
+    if (save_to_file_)
+    {
+      iter_++;
+      pcl::PointCloud<pcl::PointXYZ>::Ptr sorted_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+      *sorted_cloud = sortPatternCenters(rotated_back_cloud);
+      for (pcl::PointCloud<pcl::PointXYZ>::iterator it = sorted_cloud->begin(); it < sorted_cloud->end(); ++it)
+      {
+        savefile_ << it->x << "; " << it->y << "; " << it->z << "; ";
+      }
+      savefile_ << iter_;
+      RCLCPP_INFO(get_logger(), "Saving data of the %i-th iteration", iter_);
+    }
+
+    if (save_to_file_)
+      savefile_ << std::endl;
   }
   else
   {

@@ -36,7 +36,7 @@ private:
 
   // Pubs Definition
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr range_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub_, rotated_pattern_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pattern_pub_, plane_pub_;
   rclcpp::Publisher<pcl_msgs::msg::ModelCoefficients>::SharedPtr coeff_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr centers_pub_;
   rclcpp::Publisher<calibration::msg::CircleCentroids>::SharedPtr final_pub_;
@@ -58,4 +58,7 @@ private:
   double circle_threshold_, target_radius_tolerance_;
   Eigen::Vector3f axis_;   // Axis parallel to target
   double angle_threshold_; // Tilt angle w.r.t axis_
+  bool save_to_file_;
+  std::ofstream savefile_;
+  int iter_ = 0;
 };

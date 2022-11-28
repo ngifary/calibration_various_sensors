@@ -6,6 +6,7 @@
 #include "pcl/registration/transformation_estimation_svd.h"
 #include "pcl_conversions/pcl_conversions.hpp"
 #include "pcl_ros/transforms.hpp"
+#include "pcl/registration/transformation_estimation_svd.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/static_transform_broadcaster.h"
@@ -73,6 +74,11 @@ private:
     std::string sensor2_frame_id_ = "";
 
     int max_queue_size_ = 10;
+
+    int iter_ = 0;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_cloud_combine;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sensor2_cloud_combine;
 
     // Node Parameters Declaration
     std::string csv_name_;

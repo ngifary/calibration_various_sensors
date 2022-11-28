@@ -22,6 +22,15 @@ Calibration::Calibration(const rclcpp::NodeOptions &options = rclcpp::NodeOption
     sensor1_sub_.subscribe(this, "cloud1", cloudQoS().get_rmw_qos_profile());
     sensor2_sub_.subscribe(this, "cloud2", cloudQoS().get_rmw_qos_profile());
 
+    if (sensor1_cloud_combine == NULL)
+    {
+        sensor1_cloud_combine.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    }
+    if (sensor2_cloud_combine == NULL)
+    {
+        sensor2_cloud_combine.reset(new pcl::PointCloud<pcl::PointXYZ>);
+    }
+
     sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<ApproxSync>>(max_queue_size_);
     sync_inputs_a_->connectInput(sensor1_sub_, sensor2_sub_);
     sync_inputs_a_->registerCallback(std::bind(&Calibration::callback, this, std::placeholders::_1, std::placeholders::_2));
@@ -163,53 +172,20 @@ void Calibration::initializeParams()
 
 Eigen::Affine3f Calibration::targetPose(pcl::PointCloud<pcl::PointXYZ>::Ptr board_pcl)
 {
-    // Translation from from board to sensor frame
-    Eigen::Vector3f board_centroid(0.0, 0.0, 0.0);
-    std::vector<Eigen::Vector3f> board_pts(4);
-    for (ushort i = 0; i < 4; i++)
-    {
-        Eigen::Vector3f point;
-
-        point = board_pcl->at(i).getVector3fMap();
-        board_centroid += point;
-        board_pts[i] = point;
-    }
-    board_centroid /= 4;
-
     // Construct board normal to -x axis
+    float width_2 = pcl::euclideanDistance(board_pcl->at(0), board_pcl->at(1));
+    float height_2 = pcl::euclideanDistance(board_pcl->at(1), board_pcl->at(2));
 
-    auto height_2 = ((board_pts[0] + board_pts[1]) / 2 - board_centroid).norm();
-    auto width_2 = ((board_pts[1] + board_pts[2]) / 2 - board_centroid).norm();
+    pcl::PointCloud<pcl::PointXYZ>::Ptr normal_board_pcl(new pcl::PointCloud<pcl::PointXYZ>);
+    normal_board_pcl->resize(4);
+    normal_board_pcl->at(0) = pcl::PointXYZ(0.0, width_2, height_2);
+    normal_board_pcl->at(1) = pcl::PointXYZ(0.0, -width_2, height_2);
+    normal_board_pcl->at(2) = pcl::PointXYZ(0.0, -width_2, -height_2);
+    normal_board_pcl->at(3) = pcl::PointXYZ(0.0, width_2, -height_2);
 
-    std::vector<Eigen::Vector3f> normal_board_pts(4);
-    normal_board_pts[0] = Eigen::Vector3f(0.0, width_2, height_2);
-    normal_board_pts[1] = Eigen::Vector3f(0.0, -width_2, height_2);
-    normal_board_pts[2] = Eigen::Vector3f(0.0, -width_2, -height_2);
-    normal_board_pts[3] = Eigen::Vector3f(0.0, width_2, -height_2);
-
-    Eigen::Vector4f board_rotation(0.0, 0.0, 0.0, 0.0);
-    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
-    {
-        Eigen::Vector3f vector_point = board_pts[j] - board_centroid;
-
-        Eigen::Quaternionf quaternion;
-        quaternion.setFromTwoVectors(normal_board_pts[j], vector_point);
-        if (quaternion.w() > 0)
-        {
-            quaternion = quaternion.conjugate();
-        }
-        board_rotation += quaternion.coeffs();
-    }
-    board_rotation /= TARGET_NUM_CIRCLES;
-
-    Eigen::Quaternionf quaternion(board_rotation);
-
-    Eigen::Vector3f board_translation = -(quaternion * board_centroid);
-
+    pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> estimate;
     Eigen::Matrix4f mat;
-    mat.setIdentity();
-    mat.block<3, 3>(0, 0) = quaternion.toRotationMatrix();
-    mat.block<3, 1>(0, 3) = board_translation;
+    estimate.estimateRigidTransformation(*board_pcl, *normal_board_pcl, mat);
 
     Eigen::Affine3f tf_sensor_board(mat);
 
@@ -218,60 +194,18 @@ Eigen::Affine3f Calibration::targetPose(pcl::PointCloud<pcl::PointXYZ>::Ptr boar
 
 Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>::Ptr sensor1_pcl, pcl::PointCloud<pcl::PointXYZ>::Ptr sensor2_pcl)
 {
-    // Get the board centroids
-    Eigen::Vector3f board1_centroids(0.0, 0.0, 0.0);
-    Eigen::Vector3f board2_centroids(0.0, 0.0, 0.0);
-    std::vector<Eigen::Vector3f> sensor1_pts, sensor2_pts;
-    for (ushort i = 0; i < TARGET_NUM_CIRCLES; i++)
-    {
-        Eigen::Vector3f point;
-
-        point = sensor1_pcl->at(i).getVector3fMap();
-        board1_centroids += point;
-        sensor1_pts.push_back(point);
-
-        point = sensor2_pcl->at(i).getVector3fMap();
-        board2_centroids += point;
-        sensor2_pts.push_back(point);
-    }
-    board1_centroids /= TARGET_NUM_CIRCLES;
-    board2_centroids /= TARGET_NUM_CIRCLES;
-
-    // Relative rotation of sensor 1 in sensor 2 using SVD
-    Eigen::Vector4f sensor_rotation(0.0, 0.0, 0.0, 0.0);
-    for (ushort j = 0; j < TARGET_NUM_CIRCLES; j++)
-    {
-        Eigen::Vector3f vector1_point = sensor1_pts[j] - board1_centroids;
-        Eigen::Vector3f vector2_point = sensor2_pts[j] - board2_centroids;
-
-        Eigen::Quaternionf quaternion;
-        quaternion.setFromTwoVectors(vector1_point, vector2_point);
-        if (quaternion.w() > 0)
-        {
-            quaternion = quaternion.conjugate();
-        }
-
-        sensor_rotation += quaternion.coeffs();
-    }
-    sensor_rotation /= TARGET_NUM_CIRCLES;
-
-    Eigen::Quaternionf quaternion(sensor_rotation);
-
-    // Relative translation of sensor 1 in sensor 2
-    Eigen::Vector3f sensor_translation = board2_centroids - (quaternion * board1_centroids);
-
+    pcl::registration::TransformationEstimationSVD<pcl::PointXYZ, pcl::PointXYZ> estimate;
     Eigen::Matrix4f mat;
-    mat.setIdentity();
-    mat.block<3, 3>(0, 0) = quaternion.toRotationMatrix();
-    mat.block<3, 1>(0, 3) = sensor_translation;
+    estimate.estimateRigidTransformation(*sensor1_pcl, *sensor2_pcl, mat);
 
     Eigen::Affine3f tf_sensor1_sensor2(mat);
 
     if (DEBUG)
     {
+        RCLCPP_INFO(get_logger(), "There are %i frame(s) processed", iter_);
         Eigen::VectorXf pose(6, 1);
-        pose.block<3, 1>(0, 0) = sensor_translation;
-        pose.block<3, 1>(3, 0) = quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
+        pose.block<3, 1>(0, 0) = tf_sensor1_sensor2.translation();
+        pose.block<3, 1>(3, 0) = tf_sensor1_sensor2.rotation().eulerAngles(0, 1, 2);
 
         RCLCPP_INFO(get_logger(), "The transformation of sensor 1 to sensor 2 is: [%f, %f, %f, %f, %f, %f]", pose[0], pose[1], pose[2], pose[3], pose[4], pose[5]);
 
@@ -287,8 +221,8 @@ Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>:
 
 void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedPtr sensor1_centroids, const calibration::msg::CircleCentroids::ConstSharedPtr sensor2_centroids)
 {
-
     RCLCPP_INFO(this->get_logger(), "Cluster pair correspondence received!.");
+    iter_ ++;
 
     sensor1_frame_id_ = sensor1_centroids->header.frame_id;
     sensor2_frame_id_ = sensor2_centroids->header.frame_id;
@@ -349,7 +283,10 @@ void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedP
     Eigen::Affine3f tf_sensor1_board = targetPose(sensor1_cloud_sorted);
     Eigen::Affine3f tf_sensor2_board = targetPose(sensor2_cloud_sorted);
 
-    Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(sensor1_cloud_sorted, sensor2_cloud_sorted);
+    *sensor1_cloud_combine += *sensor1_cloud_sorted;
+    *sensor2_cloud_combine += *sensor2_cloud_sorted;
+
+    Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(sensor1_cloud_combine, sensor2_cloud_combine);
 
     if (publish_tf_)
     {

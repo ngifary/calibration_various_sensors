@@ -105,9 +105,10 @@ def generate_launch_description():
             'line_threshold': 0.01,
             'circle_threshold': 0.05,
             'circle_radius': 0.12,
-            'target_radius_tolerance': 0.01,
+            'target_radius_tolerance': 0.02,
             'delta_width_circles': 0.5,
             'delta_height_circles': 0.4,
+            'save_to_file': True
         }],
         output=stdout
     )
