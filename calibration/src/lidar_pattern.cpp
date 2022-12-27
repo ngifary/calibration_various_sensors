@@ -21,7 +21,7 @@ LidarPattern::LidarPattern() : Node("lidar_pattern")
     centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
     coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("plane_model", 1);
   }
-  final_pub_ = this->create_publisher<calibration::msg::CircleCentroids>("centers_msg", 1);
+  final_pub_ = this->create_publisher<calibration::msg::CircleCentroids>("centers_msg", 10);
 
   std::string csv_name;
 

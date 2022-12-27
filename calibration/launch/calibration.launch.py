@@ -58,7 +58,9 @@ def generate_launch_description():
         ],
         parameters=[{
                 'is_sensor1_cam': is_sensor1_cam,
-                'is_sensor2_cam': is_sensor2_cam
+                'is_sensor2_cam': is_sensor2_cam,
+                'accumulate': False,
+                'save_to_file': False
         }]
     )
 

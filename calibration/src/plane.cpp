@@ -4,7 +4,7 @@ SACSegmentator::SACSegmentator() : Node("plane_segmentation"), threshold_(0.1)
 {
   inliers_pub_ = this->create_publisher<pcl_msgs::msg::PointIndices>("inliers", 1);
   coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("model", 1);
-  auto cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  cloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       "input", 1, std::bind(&SACSegmentator::cloud_callback, this, std::placeholders::_1));
 
   std::vector<double> axis_param;

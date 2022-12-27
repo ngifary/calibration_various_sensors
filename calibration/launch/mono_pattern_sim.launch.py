@@ -24,13 +24,13 @@ def generate_launch_description():
         'stdout', default_value='screen'
     )
     camera_name_launch_arg = DeclareLaunchArgument(
-        "camera_name", default_value='basler_camera'
+        "camera_name", default_value='basler'
     )
     image_topic_launch_arg = DeclareLaunchArgument(
-        'image_topic', default_value='image_raw'
+        'image_topic', default_value=[camera_name, '/image_raw']
     )
     camera_topic_launch_arg = DeclareLaunchArgument(
-        'camera_topic', default_value='camera_info'
+        'camera_topic', default_value=[camera_name, '/camera_info']
     )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'
@@ -57,7 +57,7 @@ def generate_launch_description():
             'delta_height_qr_center': 0.35,
             'delta_width_circles': 0.5,
             'delta_height_circles': 0.4,
-            'save_to_file': True
+            'save_to_file': False
         }],
         output=stdout
     )

@@ -521,8 +521,10 @@ void MonoQRPattern::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr 
       if (save_to_file_)
       {
         iter_++;
-        sortPatternCenters(centers_cloud);
-        for (pcl::PointCloud<pcl::PointXYZ>::iterator it = centers_cloud->begin(); it < centers_cloud->end(); ++it)
+        pcl::PointCloud<pcl::PointXYZ>::Ptr aux(new pcl::PointCloud<pcl::PointXYZ>);
+        camera_to_lidar(centers_cloud, aux);
+        *aux = sortPatternCenters(aux);
+        for (pcl::PointCloud<pcl::PointXYZ>::iterator it = aux->begin(); it < aux->end(); ++it)
         {
           savefile_ << it->x << "; " << it->y << "; " << it->z << "; ";
         }

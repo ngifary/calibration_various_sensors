@@ -21,7 +21,7 @@ def generate_launch_description():
         'stdout', default_value='screen'
     )
     cloud_topic_launch_arg = DeclareLaunchArgument(
-        'cloud_topic', default_value='/sick_mrs6124/sick_points'
+        'cloud_topic', default_value='/sick/sick_points'
     )
     sensor_id_launch_arg = DeclareLaunchArgument(
         "sensor_id", default_value='0'
@@ -62,8 +62,8 @@ def generate_launch_description():
                     ],
                     parameters=[{
                         'filter_field_name': 'y',
-                        'filter_limit_min': -2.0,
-                        'filter_limit_max': 2.0,
+                        'filter_limit_min': -3.0,
+                        'filter_limit_max': 3.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                     }]),
@@ -80,7 +80,7 @@ def generate_launch_description():
                     parameters=[{
                         'filter_field_name': 'x',
                         'filter_limit_min': 0.0,
-                        'filter_limit_max': 7.0,
+                        'filter_limit_max': 9.0,
                         'filter_limit_negative': False,
                         'max_queue_size': 1,
                     }]),
@@ -105,10 +105,10 @@ def generate_launch_description():
             'line_threshold': 0.01,
             'circle_threshold': 0.05,
             'circle_radius': 0.12,
-            'target_radius_tolerance': 0.02,
+            'target_radius_tolerance': 0.01,
             'delta_width_circles': 0.5,
             'delta_height_circles': 0.4,
-            'save_to_file': True
+            'save_to_file': False
         }],
         output=stdout
     )

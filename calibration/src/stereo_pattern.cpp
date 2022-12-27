@@ -16,10 +16,10 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
 
   if (DEBUG)
   {
-    inliers_pub_ = this->create_publisher<pcl_msgs::msg::PointIndices>("inliers_pub_", 1);
-    coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("coeff_pub_", 1);
-    plane_edges_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("plane_edges_pub_", 1);
-    xy_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("xy_pattern_pub_", 1);
+    inliers_pub_ = this->create_publisher<pcl_msgs::msg::PointIndices>("inliers_pub", 1);
+    coeff_pub_ = this->create_publisher<pcl_msgs::msg::ModelCoefficients>("coeff_pub", 1);
+    plane_edges_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("plane_edges_pub", 1);
+    xy_pattern_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("xy_pattern_pub", 1);
     centers_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("centers_cloud", 1);
   }
   final_pub_ = this->create_publisher<calibration::msg::CircleCentroids>("centers_msg", 1);
@@ -36,6 +36,26 @@ StereoPattern::StereoPattern() : Node("stereo_pattern")
 
   // ROS param callback
   auto ret = this->add_on_set_parameters_callback(std::bind(&StereoPattern::param_callback, this, std::placeholders::_1));
+
+  // Just for statistics
+  if (save_to_file_)
+  {
+    std::ostringstream os;
+    os << getenv("HOME") << "/calibration_tests/" << csv_name;
+    if (save_to_file_)
+    {
+      if (DEBUG)
+      {
+        RCLCPP_INFO(get_logger(), "Opening %s", os.str().c_str());
+        savefile_.open(os.str().c_str());
+        savefile_ << "cent1_x; cent1_y; cent1_z; "
+                     "cent2_x; cent2_y; cent2_z; "
+                     "cent3_x; cent3_y; cent3_z; "
+                     "cent4_x; cent4_y; cent4_z; it"
+                  << std::endl;
+      }
+    }
+  }
 }
 
 StereoPattern::~StereoPattern()
@@ -57,15 +77,15 @@ void StereoPattern::initializeParams()
   desc.description = "distance from top circles centre to bottom circles centre (m)";
   delta_height_circles_ = declare_parameter(desc.name, 0.4);
 
-  desc.name = "plane_distance_inliers";
+  desc.name = "plane_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  plane_distance_inliers_ = declare_parameter(desc.name, 0.1);
+  plane_threshold_ = declare_parameter(desc.name, 0.1);
 
   desc.name = "circle_threshold";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  circle_threshold_ = declare_parameter(desc.name, 0.05);
+  circle_threshold_ = declare_parameter(desc.name, 0.01);
 
   desc.name = "circle_radius";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
@@ -75,7 +95,12 @@ void StereoPattern::initializeParams()
   desc.name = "target_radius_tolerance";
   desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
   desc.description = "";
-  target_radius_tolerance_ = declare_parameter(desc.name, 0.1);
+  target_radius_tolerance_ = declare_parameter(desc.name, 0.01);
+
+  desc.name = "save_to_file";
+  desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+  desc.description = "save result to a file";
+  save_to_file_ = declare_parameter(desc.name, false);
 }
 
 void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr camera_cloud,
@@ -102,7 +127,7 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
   pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr dit(
       new pcl::SampleConsensusModelPlane<pcl::PointXYZ>(cam_cloud));
   std::vector<int> plane_inliers;
-  dit->selectWithinDistance(coefficients_v, plane_distance_inliers_,
+  dit->selectWithinDistance(coefficients_v, plane_threshold_,
                             plane_inliers);
   pcl::copyPointCloud<pcl::PointXYZ>(*cam_cloud, plane_inliers,
                                      *cam_plane_cloud);
@@ -354,6 +379,23 @@ void StereoPattern::callback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr
     to_send.cloud = *camera_cloud;
     to_send.centers = ros2_pointcloud;
     final_pub_->publish(to_send);
+
+    if (save_to_file_)
+    {
+      iter_++;
+      pcl::PointCloud<pcl::PointXYZ>::Ptr aux(new pcl::PointCloud<pcl::PointXYZ>);
+      camera_to_lidar(rotated_back_cloud, aux);
+      *aux = sortPatternCenters(aux);
+      for (pcl::PointCloud<pcl::PointXYZ>::iterator it = aux->begin(); it < aux->end(); ++it)
+      {
+        savefile_ << it->x << "; " << it->y << "; " << it->z << "; ";
+      }
+      savefile_ << iter_;
+      RCLCPP_INFO(get_logger(), "Saving data of the %i-th iteration", iter_);
+    }
+
+    if (save_to_file_)
+      savefile_ << std::endl;
   }
   else
   {

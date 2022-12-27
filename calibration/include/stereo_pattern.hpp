@@ -35,7 +35,7 @@ private:
 
   double delta_width_circles_, delta_height_circles_;
   double circle_radius_, circle_threshold_;
-  double plane_distance_inliers_;
+  double plane_threshold_;
   double target_radius_tolerance_;
 
   // Pubs Definition
@@ -54,4 +54,7 @@ private:
   std::shared_ptr<message_filters::Synchronizer<ExactSync>> sync_;
   /** \brief The maximum queue size (default: 3). */
   int max_queue_size_ = 3;
+  bool save_to_file_;
+  std::ofstream savefile_;
+  int iter_ = 0;
 };

@@ -85,4 +85,7 @@ private:
     bool approximate_time_ = true;
     bool publish_tf_;
     bool sensor1_is_cam_, sensor2_is_cam_;
+    bool save_to_file_;
+    std::ofstream savefile_;
+    bool accumulate_;
 };

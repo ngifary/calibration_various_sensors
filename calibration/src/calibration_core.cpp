@@ -34,12 +34,30 @@ Calibration::Calibration(const rclcpp::NodeOptions &options = rclcpp::NodeOption
     sync_inputs_a_ = std::make_shared<message_filters::Synchronizer<ApproxSync>>(max_queue_size_);
     sync_inputs_a_->connectInput(sensor1_sub_, sensor2_sub_);
     sync_inputs_a_->registerCallback(std::bind(&Calibration::callback, this, std::placeholders::_1, std::placeholders::_2));
+
+    // Just for statistics
+    if (save_to_file_)
+    {
+        std::ostringstream os;
+        os << getenv("HOME") << "/calibration_tests/" << csv_name_;
+        if (save_to_file_)
+        {
+            RCLCPP_INFO(get_logger(), "Opening %s", os.str().c_str());
+            savefile_.open(os.str().c_str());
+            savefile_ << "it; x12; y12; z12; r12; p12; y12; "
+                         "x21; y21; z21; r21; p21; y21"
+                      << std::endl;
+        }
+    }
 }
 
 Calibration::~Calibration()
 {
     sensor1_sub_.unsubscribe();
     sensor2_sub_.unsubscribe();
+
+    if (save_to_file_)
+        savefile_.close();
 
     // Save calibration params to launch file for testing
 
@@ -164,10 +182,20 @@ void Calibration::initializeParams()
     desc.description = "";
     publish_tf_ = declare_parameter(desc.name, true);
 
+    desc.name = "accumulate";
+    desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+    desc.description = "";
+    accumulate_ = declare_parameter(desc.name, true);
+
     desc.name = "csv_name";
     desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
     desc.description = "";
     csv_name_ = declare_parameter(desc.name, "registration_" + currentDateTime() + ".csv");
+
+    desc.name = "save_to_file";
+    desc.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+    desc.description = "save result to a file";
+    save_to_file_ = declare_parameter(desc.name, false);
 }
 
 Eigen::Affine3f Calibration::targetPose(pcl::PointCloud<pcl::PointXYZ>::Ptr board_pcl)
@@ -222,7 +250,7 @@ Eigen::Affine3f Calibration::calibrateExtrinsics(pcl::PointCloud<pcl::PointXYZ>:
 void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedPtr sensor1_centroids, const calibration::msg::CircleCentroids::ConstSharedPtr sensor2_centroids)
 {
     RCLCPP_INFO(this->get_logger(), "Cluster pair correspondence received!.");
-    iter_ ++;
+    iter_++;
 
     sensor1_frame_id_ = sensor1_centroids->header.frame_id;
     sensor2_frame_id_ = sensor2_centroids->header.frame_id;
@@ -283,10 +311,37 @@ void Calibration::callback(const calibration::msg::CircleCentroids::ConstSharedP
     Eigen::Affine3f tf_sensor1_board = targetPose(sensor1_cloud_sorted);
     Eigen::Affine3f tf_sensor2_board = targetPose(sensor2_cloud_sorted);
 
-    *sensor1_cloud_combine += *sensor1_cloud_sorted;
-    *sensor2_cloud_combine += *sensor2_cloud_sorted;
+    if (accumulate_)
+    {
+        *sensor1_cloud_combine += *sensor1_cloud_sorted;
+        *sensor2_cloud_combine += *sensor2_cloud_sorted;
+    }
+    else
+    {
+        *sensor1_cloud_combine = *sensor1_cloud_sorted;
+        *sensor2_cloud_combine = *sensor2_cloud_sorted;
+    }
 
     Eigen::Affine3f tf_sensor1_sensor2 = calibrateExtrinsics(sensor1_cloud_combine, sensor2_cloud_combine);
+
+    if (save_to_file_)
+    {
+        RCLCPP_INFO(get_logger(), "Current size: %li and %li", sensor1_cloud_combine->size(), sensor2_cloud_combine->size());
+        Eigen::VectorXf pose(6, 1);
+        pose.block<3, 1>(0, 0) = tf_sensor1_sensor2.translation();
+        pose.block<3, 1>(3, 0) = tf_sensor1_sensor2.rotation().eulerAngles(0, 1, 2);
+
+        savefile_ << iter_ << "; " << pose[0] << "; " << pose[1] << "; " << pose[2] << "; " << pose[3] << "; " << pose[4] << "; " << pose[5] << "; ";
+
+        Eigen::Affine3f tf_sensor2_sensor1 = tf_sensor1_sensor2.inverse();
+        pose.block<3, 1>(0, 0) = tf_sensor2_sensor1.translation();
+        pose.block<3, 1>(3, 0) = tf_sensor2_sensor1.rotation().eulerAngles(0, 1, 2);
+
+        savefile_ << pose[0] << "; " << pose[1] << "; " << pose[2] << "; " << pose[3] << "; " << pose[4] << "; " << pose[5] << "; " << std::endl;
+    }
+
+    sensor1_cloud_sorted.reset();
+    sensor2_cloud_sorted.reset();
 
     if (publish_tf_)
     {

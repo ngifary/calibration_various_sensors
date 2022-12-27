@@ -24,13 +24,13 @@ def generate_launch_description():
         'stdout', default_value='screen'
     )
     camera_name_launch_arg = DeclareLaunchArgument(
-        "camera_name", default_value='basler_camera'
+        "camera_name", default_value='my_camera'
     )
     image_topic_launch_arg = DeclareLaunchArgument(
-        'image_topic', default_value='image_raw'
+        'image_topic', default_value='pylon_ros2_camera_node/image_raw'
     )
     camera_topic_launch_arg = DeclareLaunchArgument(
-        'camera_topic', default_value='camera_info'
+        'camera_topic', default_value='pylon_ros2_camera_node/camera_info'
     )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'

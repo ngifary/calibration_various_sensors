@@ -21,7 +21,7 @@ def generate_launch_description():
         'stdout', default_value='screen'
     )
     cloud_topic_launch_arg = DeclareLaunchArgument(
-        'cloud_topic', default_value='/sick_mrs6124/sick_points'
+        'cloud_topic', default_value='/cloud'
     )
     sensor_id_launch_arg = DeclareLaunchArgument(
         "sensor_id", default_value='0'

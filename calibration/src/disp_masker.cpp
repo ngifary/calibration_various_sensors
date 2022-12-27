@@ -10,7 +10,7 @@ Masker::Masker() : Node("image_masker")
   edges_threshold_ = declare_parameter("edges_threshold", 16);
   disp_in_image_ = declare_parameter("disp_in_image", disp_in_image_);
 
-  mask_img_pub_ = create_publisher<sensor_msgs::msg::Image>("output_img", 1);
+  // mask_img_pub_ = create_publisher<sensor_msgs::msg::Image>("output_img", 1);
   masked_pub_ = create_publisher<stereo_msgs::msg::DisparityImage>("output", 1);
 
   mask_sub_.subscribe(this, "mask");
@@ -71,7 +71,7 @@ void Masker::callback(const stereo_msgs::msg::DisparityImage::ConstSharedPtr dis
   }
   else
   {
-    cv::threshold(mask, binary_mask, edges_threshold_, 255, 0);
+    cv::threshold(mask, binary_mask, edges_threshold_, 255, cv::THRESH_BINARY);
   }
 
   // Copy input disparity to another DisparityImage variable
@@ -112,7 +112,7 @@ void Masker::callback(const stereo_msgs::msg::DisparityImage::ConstSharedPtr dis
   disparity32.copyTo(dmat, binary_mask);
 
   // Publish obstacle disparity
-  mask_img_pub_->publish(copy_disp->image);
+  // mask_img_pub_->publish(copy_disp->image);
   masked_pub_->publish(*copy_disp);
 }
 

@@ -36,10 +36,10 @@ def generate_launch_description():
         'left_raw_image_topic', default_value=[camera_name, '/left_image/image_raw']
     )
     left_image_rect_topic_launch_arg = DeclareLaunchArgument(
-        'left_rect_image_topic', default_value=[camera_name, '/left_image/image_rect']
+        'left_rect_image_topic', default_value=[camera_name, '/left_image']
     )
     left_camera_topic_launch_arg = DeclareLaunchArgument(
-        'left_camera_topic', default_value=[camera_name, '/left_image/camera_info']
+        'left_camera_topic', default_value=[camera_name, '/left_camera_info']
     )
     right_image_raw_topic_launch_arg = DeclareLaunchArgument(
         'right_raw_image_topic', default_value=[camera_name, '/right_image/image_raw']
@@ -48,13 +48,13 @@ def generate_launch_description():
         'right_rect_image_topic', default_value=[camera_name, '/right_image/image_rect']
     )
     right_camera_topic_launch_arg = DeclareLaunchArgument(
-        'right_camera_topic', default_value=[camera_name, '/right_image/camera_info']
+        'right_camera_topic', default_value=[camera_name, '/left_camera_info']
     )
     disparity_topic_launch_arg = DeclareLaunchArgument(
-        'disparity_topic', default_value='/disparity'
+        'disparity_topic', default_value='/disparity_map'
     )
     cloud_topic_launch_arg = DeclareLaunchArgument(
-        'cloud_topic', default_value='/cloud'
+        'cloud_topic', default_value='/point_cloud'
     )
     frame_name_launch_arg = DeclareLaunchArgument(
         "frame_name", default_value='camera_link'
@@ -108,11 +108,11 @@ def generate_launch_description():
         description='Use the RMW QoS settings for the image and camera info subscriptions.'
     )
     launch_image_proc_launch_arg = DeclareLaunchArgument(
-        name='launch_image_proc', default_value='True',
+        name='launch_image_proc', default_value='False',
         description='Whether to launch debayer and rectify nodes from image_proc.'
     )
     launch_stereo_image_proc_launch_arg = DeclareLaunchArgument(
-        name='launch_stereo_image_proc', default_value='True',
+        name='launch_stereo_image_proc', default_value='False',
         description='Whether to launch stereo image processing and gives point cloud from image pair.'
     )
     # Stereo algorithm parameters
@@ -133,11 +133,11 @@ def generate_launch_description():
         description='SAD correlation window width in pixels (must be odd)'
     )
     min_disparity_launch_arg = DeclareLaunchArgument(
-        name='min_disparity', default_value='600',#1900 if 4000 pixel wide 600 if 1280 pixel
+        name='min_disparity', default_value='0',
         description='Disparity to begin search at in pixels'
     )
     disparity_range_launch_arg = DeclareLaunchArgument(
-        name='disparity_range', default_value='128',
+        name='disparity_range', default_value='64',
         description='Number of disparities to search in pixels (must be a multiple of 16)'
     )
     texture_threshold_launch_arg = DeclareLaunchArgument(
@@ -260,7 +260,7 @@ def generate_launch_description():
                         ('disparity', disparity_topic),
                         ('left/image_rect_color', left_rect_image_topic),
                         ('points2', cloud_topic)
-                    ]),
+                    ])
         ],
         output=stdout,
         condition=IfCondition(launch_stereo_image_proc),
@@ -286,27 +286,26 @@ def generate_launch_description():
             ('output', ['edge', disparity_topic])
         ],
         parameters=[{
-            'disp_in_image': False,
+            'disp_in_image': True,
             'edges_threshold': 128
         }]
     )
 
     """Generate launch description with multiple components."""
     pointclouder_edges_container = ComposableNodeContainer(
-        name=['pointclouder_edges_', sensor_id],
+        name=['pointclouder_edges'],
         package='rclcpp_components',
-        namespace='',
         executable='component_container',
+        namespace='',
         composable_node_descriptions=[
                 ComposableNode(
                     package='stereo_image_proc',
                     plugin='stereo_image_proc::PointCloudNode',
-                    name=['pointcloud_edge_node_', sensor_id],
                     parameters=[{
                         'approximate_sync': approximate_sync,
-                        'avoid_point_cloud_padding': avoid_point_cloud_padding,
-                        'use_color': use_color,
-                        'use_system_default_qos': use_system_default_qos
+                        'avoid_point_cloud_padding': LaunchConfiguration('avoid_point_cloud_padding'),
+                        'use_color': LaunchConfiguration('use_color'),
+                        'use_system_default_qos': LaunchConfiguration('use_system_default_qos')
                     }],
                     remappings=[
                         ('left/camera_info', left_camera_topic),
@@ -332,7 +331,7 @@ def generate_launch_description():
                     name=['edges_pass_through_z'],
                     remappings=[
                         ('input', ['edge', cloud_topic]),
-                        ('output', 'edge/z_filtered_cloud')
+                        ('output', '_edge/z_filtered_cloud')
                     ],
                     parameters=[{
                         'filter_field_name': 'z',
@@ -342,38 +341,38 @@ def generate_launch_description():
                         'max_queue_size': 1,
                         'keep_organized': False
                     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::PassThrough',
-                #     name=['edges_pass_through_y'],
-                #     remappings=[
-                #         ('input', 'edge/z_filtered_cloud'),
-                #         ('output', 'edge/zy_filtered_cloud')
-                #     ],
-                #     parameters=[{
-                #         'filter_field_name': 'y',
-                #         'filter_limit_min': -100.0,
-                #         'filter_limit_max': 100.0,
-                #         'filter_limit_negative': False,
-                #         'max_queue_size': 1,
-                #         'keep_organized': False
-                #     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::PassThrough',
-                #     name=['edges_pass_through_x'],
-                #     remappings=[
-                #         ('input', 'edge/zy_filtered_cloud'),
-                #         ('output', 'edge/zyx_filtered_cloud')
-                #     ],
-                #     parameters=[{
-                #         'filter_field_name': 'x',
-                #         'filter_limit_min': 0.0,
-                #         'filter_limit_max': 100.0,
-                #         'filter_limit_negative': False,
-                #         'max_queue_size': 1,
-                #         'keep_organized': False
-                #     }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['edges_pass_through_y'],
+                    remappings=[
+                        ('input', 'edge/z_filtered_cloud'),
+                        ('output', 'edge/zy_filtered_cloud')
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'y',
+                        'filter_limit_min': -100.0,
+                        'filter_limit_max': 100.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                        'keep_organized': False
+                    }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['edges_pass_through_x'],
+                    remappings=[
+                        ('input', 'edge/zy_filtered_cloud'),
+                        ('output', 'edge/zyx_filtered_cloud')
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'x',
+                        'filter_limit_min': 0.0,
+                        'filter_limit_max': 100.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                        'keep_organized': False
+                    }]),
                 ComposableNode(
                     package='pcl_ros',
                     plugin='pcl_ros::PassThrough',
@@ -391,38 +390,39 @@ def generate_launch_description():
                         'max_queue_size': 1,
                         'keep_organized': False
                     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::PassThrough',
-                #     name=['full_pass_through_y'],
-                #     remappings=[
-                #         ('input', 'z_filtered_cloud'),
-                #         ('output', 'zy_filtered_cloud')
-                #     ],
-                #     parameters=[{
-                #         'filter_field_name': 'y',
-                #         'filter_limit_min': -100.0,
-                #         'filter_limit_max': 100.0,
-                #         'filter_limit_negative': False,
-                #         'max_queue_size': 1,
-                #         'keep_organized': False
-                #     }]),
-                # ComposableNode(
-                #     package='pcl_ros',
-                #     plugin='pcl_ros::PassThrough',
-                #     name=['full_pass_through_x'],
-                #     remappings=[
-                #         ('input', 'zy_filtered_cloud'),
-                #         ('output', 'zyx_filtered_cloud')
-                #     ],
-                #     parameters=[{
-                #         'filter_field_name': 'x',
-                #         'filter_limit_min': 0.0,
-                #         'filter_limit_max': 100.0,
-                #         'filter_limit_negative': False,
-                #         'max_queue_size': 1,
-                #         'keep_organized': False
-                #     }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['full_pass_through_y'],
+                    remappings=[
+                        ('input', 'z_filtered_cloud'),
+                        ('output', 'zy_filtered_cloud')
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'y',
+                        'filter_limit_min': -100.0,
+                        'filter_limit_max': 100.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                        'keep_organized': False
+                    }]),
+                ComposableNode(
+                    package='pcl_ros',
+                    plugin='pcl_ros::PassThrough',
+                    name=['full_pass_through_x'],
+                    remappings=[
+                        ('input', 'zy_filtered_cloud'),
+                        ('output', 'zyx_filtered_cloud')
+                    ],
+                    parameters=[{
+                        'filter_field_name': 'x',
+                        'filter_limit_min': 0.0,
+                        'filter_limit_max': 100.0,
+                        'filter_limit_negative': False,
+                        'max_queue_size': 1,
+                        'keep_organized': False
+                    }]),
+                
         ],
         output=stdout
     )
@@ -432,9 +432,7 @@ def generate_launch_description():
         executable='plane_segmentation',
         name=['planar_segmentation_', sensor_id],
         remappings=[
-            ('input', 'z_filtered_cloud'),
-            ('model', 'planar_segmentation/model'),
-            ('inliers', 'planar_segmentation/inliers'),
+            ('input', 'z_filtered_cloud')
         ],
         parameters=[{
             'segmentation_type': 1,
@@ -450,20 +448,10 @@ def generate_launch_description():
         name=['stereo_pattern_', sensor_id],
         remappings=[
             ('cloud2', 'edge/z_filtered_cloud'),
-            ('cam_plane_coeffs', 'planar_segmentation/model'),
+            ('cam_plane_coeffs', '/planar_segmentation/model'),
             ('centers_msg', ['stereo_pattern_',
              sensor_id, '/centers_msg'])
-        ],
-        parameters=[{
-            'plane_threshold': 0.1,
-            'circle_threshold': 0.01,
-            'circle_radius': 0.12,
-            'target_radius_tolerance': 0.01,
-            'delta_width_circles': 0.5,
-            'delta_height_circles': 0.4,
-            'save_to_file': False
-        }],
-        output=stdout
+        ]
     )
 
     tf2_node = Node(
@@ -516,6 +504,6 @@ def generate_launch_description():
         pointclouder_edges_container,
         stereo_pcl_container,
         plane_segmentation_node,
-        # stereo_pattern_node,
+        stereo_pattern_node,
         tf2_node
     ])
